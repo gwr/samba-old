@@ -1034,6 +1034,14 @@ _nss_winbind_initgroups_dyn(char *user, gid_t group, long int *start,
 		user, group);
 #endif
 
+	if (strcmp(user, "root") == 0) {
+		/* as a special case, don't return groups for
+		   'root'. This ensures that no matter what state
+		   winbind is in, we can still ssh into the host as
+		   root. */
+		return NSS_STATUS_NOTFOUND;
+	}
+
 #if HAVE_PTHREAD
 	pthread_mutex_lock(&winbind_nss_mutex);
 #endif
