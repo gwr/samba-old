@@ -260,7 +260,7 @@ done:
 	return ret;
 }
 
-static int net_registry_getvalue(int argc, const char **argv)
+static int net_registry_getvalue_internal(int argc, const char **argv, bool raw)
 {
 	WERROR werr;
 	int ret = -1;
@@ -287,13 +287,18 @@ static int net_registry_getvalue(int argc, const char **argv)
 		goto done;
 	}
 
-	print_registry_value(value, false);
+	print_registry_value(value, raw);
 
 	ret = 0;
 
 done:
 	TALLOC_FREE(ctx);
 	return ret;
+}
+
+static int net_registry_getvalue(int argc, const char **argv)
+{
+	return net_registry_getvalue_internal(argc, argv, false);
 }
 
 static int net_registry_setvalue(int argc, const char **argv)
