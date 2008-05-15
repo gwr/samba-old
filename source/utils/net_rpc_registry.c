@@ -493,6 +493,7 @@ static NTSTATUS rpc_registry_getvalue_internal(const DOM_SID *domain_sid,
 					       struct cli_state *cli,
 					       struct rpc_pipe_client *pipe_hnd,
 					       TALLOC_CTX *mem_ctx,
+					       bool raw,
 					       int argc,
 					       const char **argv)
 {
@@ -563,7 +564,7 @@ static NTSTATUS rpc_registry_getvalue_internal(const DOM_SID *domain_sid,
 		goto done;
 	}
 
-	print_registry_value(value, false);
+	print_registry_value(value, raw);
 
 done:
 	rpccli_winreg_CloseKey(pipe_hnd, tmp_ctx, &key_hnd, NULL);
@@ -572,6 +573,19 @@ done:
 	TALLOC_FREE(tmp_ctx);
 
 	return status;
+}
+
+static NTSTATUS rpc_registry_getvalue_full(const DOM_SID *domain_sid,
+					   const char *domain_name,
+					   struct cli_state *cli,
+					   struct rpc_pipe_client *pipe_hnd,
+					   TALLOC_CTX *mem_ctx,
+					   int argc,
+					   const char **argv)
+{
+	return rpc_registry_getvalue_internal(domain_sid, domain_name, cli,
+					      pipe_hnd, mem_ctx, false,
+					      argc, argv);
 }
 
 static int rpc_registry_getvalue(int argc, const char **argv)
@@ -583,7 +597,7 @@ static int rpc_registry_getvalue(int argc, const char **argv)
 	}
 
 	return run_rpc_command(NULL, PI_WINREG, 0,
-		rpc_registry_getvalue_internal, argc, argv);
+		rpc_registry_getvalue_full, argc, argv);
 }
 
 static NTSTATUS rpc_registry_createkey_internal(const DOM_SID *domain_sid,
