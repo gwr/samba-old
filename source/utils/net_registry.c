@@ -301,6 +301,11 @@ static int net_registry_getvalue(int argc, const char **argv)
 	return net_registry_getvalue_internal(argc, argv, false);
 }
 
+static int net_registry_getvalueraw(int argc, const char **argv)
+{
+	return net_registry_getvalue_internal(argc, argv, true);
+}
+
 static int net_registry_setvalue(int argc, const char **argv)
 {
 	WERROR werr;
@@ -459,6 +464,11 @@ int net_registry(int argc, const char **argv)
 			"getvalue",
 			net_registry_getvalue,
 			"Print a registry value",
+		},
+		{
+			"getvalueraw",
+			net_registry_getvalueraw,
+			"Print a registry value (raw format)",
 		},
 		{
 			"setvalue",
