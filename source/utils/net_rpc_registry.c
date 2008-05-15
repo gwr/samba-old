@@ -600,6 +600,31 @@ static int rpc_registry_getvalue(int argc, const char **argv)
 		rpc_registry_getvalue_full, argc, argv);
 }
 
+static NTSTATUS rpc_registry_getvalue_raw(const DOM_SID *domain_sid,
+					  const char *domain_name,
+					  struct cli_state *cli,
+					  struct rpc_pipe_client *pipe_hnd,
+					  TALLOC_CTX *mem_ctx,
+					  int argc,
+					  const char **argv)
+{
+	return rpc_registry_getvalue_internal(domain_sid, domain_name, cli,
+					      pipe_hnd, mem_ctx, true,
+					      argc, argv);
+}
+
+static int rpc_registry_getvalueraw(int argc, const char **argv)
+{
+	if (argc != 2) {
+		d_fprintf(stderr, "usage: net rpc registry getvalue <key> "
+			  "<valuename>\n");
+		return -1;
+	}
+
+	return run_rpc_command(NULL, PI_WINREG, 0,
+		rpc_registry_getvalue_raw, argc, argv);
+}
+
 static NTSTATUS rpc_registry_createkey_internal(const DOM_SID *domain_sid,
 						const char *domain_name, 
 						struct cli_state *cli,
@@ -1183,6 +1208,8 @@ int net_rpc_registry(int argc, const char **argv)
 		  "Delete a registry key" },
 		{ "getvalue", rpc_registry_getvalue,
 		  "Print a registry value" },
+		{ "getvalueraw", rpc_registry_getvalueraw,
+		  "Print a registry value (raw format)" },
 		{ "setvalue",  rpc_registry_setvalue,
 		  "Set a new registry value" },
 		{ "deletevalue",  rpc_registry_deletevalue,
