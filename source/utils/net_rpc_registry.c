@@ -563,7 +563,7 @@ static NTSTATUS rpc_registry_getvalue_internal(const DOM_SID *domain_sid,
 		goto done;
 	}
 
-	print_registry_value(value);
+	print_registry_value(value, false);
 
 done:
 	rpccli_winreg_CloseKey(pipe_hnd, tmp_ctx, &key_hnd, NULL);

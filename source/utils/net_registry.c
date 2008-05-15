@@ -287,7 +287,7 @@ static int net_registry_getvalue(int argc, const char **argv)
 		goto done;
 	}
 
-	print_registry_value(value);
+	print_registry_value(value, false);
 
 	ret = 0;
 
