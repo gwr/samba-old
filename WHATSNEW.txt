@@ -191,16 +191,17 @@ smb.conf changes
     clustering				New		No
     cluster addresses			New		""
     config backend			New		file
-    ctdb socket				New		""
+    ctdbd socket			New		""
     debug class				New		No
     lanman auth				Changed Default	No
     ldap debug level			New		0
     ldap debug threshold		New		10
-    mangle map				Removed
+    mangled map				Removed
     min receive file size		New             0
     open files database hashsize	Removed
     read bmpx				Removed
     registry shares			New		No
+    smb encrypt				New		Auto
     winbind expand groups		New		1
     winbind rpc only			New		No
 
@@ -233,6 +234,7 @@ o   Alexander Bokovoy <ab@samba.org>
 
 o   Günther Deschner <gd@samba.org>
     * BUG 5465: Fix joining with createcomputer=ou1/ou2/ou3.
+    * BUG 5461: Fix issue with Citrix on Samba DCs with more than 900 groups.
     * Fix wins null pointer crash in nss_wins module.
     * Fix lm session key length in _netr_LogonSamLogon.
     * Add -f switch for DsGetDCName() example and be more verbose on output.
