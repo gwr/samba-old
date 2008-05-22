@@ -650,6 +650,7 @@ SAVE_CPPFLAGS="${CPPFLAGS}"
 CPPFLAGS="${CPPFLAGS} ${SAMBA_CONFIGURE_CPPFLAGS}"
 
 AC_LIBREPLACE_BROKEN_CHECKS
+AC_LIBREPLACE_NETWORK_CHECKS
 
 CPPFLAGS="${SAVE_CPPFLAGS}"
 
@@ -662,17 +663,16 @@ done
 AC_SUBST(LIBREPLACE_OBJS)
 
 # add -ldl to the global LIBS
-LIBS="${LIBS} ${LIBDL}"
+LIBS="${LIBS} ${LIBDL} ${LIBREPLACE_NETWORK_LIBS}"
 
-AC_CHECK_HEADERS(aio.h arpa/inet.h sys/fcntl.h sys/select.h fcntl.h sys/time.h sys/unistd.h rpc/nettype.h)
+AC_CHECK_HEADERS(aio.h sys/fcntl.h sys/select.h fcntl.h sys/time.h sys/unistd.h rpc/nettype.h)
 AC_CHECK_HEADERS(unistd.h utime.h grp.h sys/id.h memory.h alloca.h)
 AC_CHECK_HEADERS(limits.h float.h pthread.h)
 AC_CHECK_HEADERS(rpc/rpc.h rpcsvc/nis.h rpcsvc/ypclnt.h)
 AC_CHECK_HEADERS(sys/param.h ctype.h sys/wait.h sys/resource.h sys/ioctl.h sys/ipc.h sys/prctl.h)
-AC_CHECK_HEADERS(sys/mman.h sys/filio.h sys/priv.h sys/shm.h string.h strings.h stdlib.h sys/socket.h)
-AC_CHECK_HEADERS(sys/un.h ifaddrs.h)
+AC_CHECK_HEADERS(sys/mman.h sys/filio.h sys/priv.h sys/shm.h string.h strings.h stdlib.h)
 AC_CHECK_HEADERS(sys/mount.h sys/vfs.h sys/fs/s5param.h sys/filsys.h termios.h termio.h)
-AC_CHECK_HEADERS(sys/termio.h sys/statfs.h sys/dustat.h sys/statvfs.h stdarg.h sys/sockio.h)
+AC_CHECK_HEADERS(sys/termio.h sys/statfs.h sys/dustat.h sys/statvfs.h stdarg.h)
 AC_CHECK_HEADERS(sys/sysmacros.h)
 AC_CHECK_HEADERS(sys/syslog.h syslog.h)
 AC_CHECK_HEADERS(langinfo.h locale.h)
@@ -802,24 +802,6 @@ AC_CACHE_CHECK([if the compiler will optimize out function calls],samba_cv_optim
 	samba_cv_optimize_out_funcation_calls=yes,samba_cv_optimize_out_funcation_calls=no)])
 if test x"$samba_cv_optimize_out_funcation_calls" = x"yes"; then
    AC_DEFINE(HAVE_COMPILER_WILL_OPTIMIZE_OUT_FNS,1,[Whether the compiler will optimize out function calls])
-fi
-
-############################################
-# check for unix domain sockets
-AC_CACHE_CHECK([for unix domain sockets],samba_cv_unixsocket, [
-    AC_TRY_COMPILE([
-#include <sys/types.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <sys/socket.h>
-#include <sys/un.h>],
-[
-  struct sockaddr_un sunaddr;
-  sunaddr.sun_family = AF_UNIX;
-],
-	samba_cv_unixsocket=yes,samba_cv_unixsocket=no)])
-if test x"$samba_cv_unixsocket" = x"yes"; then
-   AC_DEFINE(HAVE_UNIXSOCKET,1,[If we need to build with unixsocket support])
 fi
 
 #############################################
@@ -1014,40 +996,6 @@ AC_CHECK_LIB(readline, history_list,
 	     [AC_DEFINE(HAVE_HISTORY_LIST, 1, [Do we have history_list?])],
 	     [],
 	     [$TERMLIBS])
-
-# The following test taken from the cvs sources
-# If we can't find connect, try looking in -lsocket, -lnsl, and -linet.
-# The Irix 5 libc.so has connect and gethostbyname, but Irix 5 also has
-# libsocket.so which has a bad implementation of gethostbyname (it
-# only looks in /etc/hosts), so we only look for -lsocket if we need
-# it.
-AC_CHECK_FUNCS(connect)
-if test x"$ac_cv_func_connect" = x"no"; then
-    case "$LIBS" in
-    *-lnsl*) ;;
-    *) AC_CHECK_LIB(nsl_s, connect) ;;
-    esac
-    case "$LIBS" in
-    *-lnsl*) ;;
-    *) AC_CHECK_LIB(nsl, connect) ;;
-    esac
-    case "$LIBS" in
-    *-lsocket*) ;;
-    *) AC_CHECK_LIB(socket, connect) ;;
-    esac
-    case "$LIBS" in
-    *-linet*) ;;
-    *) AC_CHECK_LIB(inet, connect) ;;
-    esac
-    dnl We can't just call AC_CHECK_FUNCS(connect) here, because the value
-    dnl has been cached.
-    if test x"$ac_cv_lib_socket_connect" = x"yes" ||
-       test x"$ac_cv_lib_inet_connect" = x"yes"; then
-        # ac_cv_func_connect=yes
-        # don't!  it would cause AC_CHECK_FUNC to succeed next time configure is run
-        AC_DEFINE(HAVE_CONNECT,1,[Whether the system has connect()])
-    fi
-fi
 
 ###############################################
 # test for where we get yp_get_default_domain() from
@@ -2006,16 +1954,6 @@ if test x"$samba_cv_HAVE_UNSIGNED_CHAR" = x"yes"; then
     AC_DEFINE(HAVE_UNSIGNED_CHAR,1,[Whether the 'unsigned char' type is available])
 fi
 
-AC_CACHE_CHECK([for sin_len in sock],samba_cv_HAVE_SOCK_SIN_LEN,[
-AC_TRY_COMPILE([#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>],
-[struct sockaddr_in sock; sock.sin_len = sizeof(sock);],
-samba_cv_HAVE_SOCK_SIN_LEN=yes,samba_cv_HAVE_SOCK_SIN_LEN=no)])
-if test x"$samba_cv_HAVE_SOCK_SIN_LEN" = x"yes"; then
-    AC_DEFINE(HAVE_SOCK_SIN_LEN,1,[Whether the sockaddr_in struct has a sin_len property])
-fi
-
 AC_CACHE_CHECK([whether seekdir returns void],samba_cv_SEEKDIR_RETURNS_VOID,[
 AC_TRY_COMPILE([#include <sys/types.h>
 #include <dirent.h>
@@ -2653,16 +2591,6 @@ if test x"$samba_cv_HAVE_FTRUNCATE_EXTEND" = x"yes"; then
     AC_DEFINE(HAVE_FTRUNCATE_EXTEND,1,[Truncate extend])
 fi
 
-AC_CACHE_CHECK([for AF_LOCAL socket support], samba_cv_HAVE_WORKING_AF_LOCAL, [
-AC_TRY_RUN([#include "${srcdir-.}/tests/unixsock.c"],
-	   samba_cv_HAVE_WORKING_AF_LOCAL=yes,
-	   samba_cv_HAVE_WORKING_AF_LOCAL=no,
-	   samba_cv_HAVE_WORKING_AF_LOCAL=cross)])
-if test x"$samba_cv_HAVE_WORKING_AF_LOCAL" != xno
-then
-    AC_DEFINE(HAVE_WORKING_AF_LOCAL, 1, [Define if you have working AF_LOCAL sockets])
-fi
-
 AC_CACHE_CHECK([for broken getgroups],samba_cv_HAVE_BROKEN_GETGROUPS,[
 AC_TRY_RUN([#include "${srcdir-.}/tests/getgroups.c"],
            samba_cv_HAVE_BROKEN_GETGROUPS=yes,samba_cv_HAVE_BROKEN_GETGROUPS=no,samba_cv_HAVE_BROKEN_GETGROUPS=cross)])
@@ -2675,29 +2603,6 @@ SMB_CHECK_SYSCONF(_SC_NPROC_ONLN)
 SMB_CHECK_SYSCONF(_SC_NPROCESSORS_ONLN)
 SMB_CHECK_SYSCONF(_SC_PAGESIZE)
 AC_CHECK_FUNCS(getpagesize)
-
-dnl test for ipv6
-AC_CACHE_CHECK([for ipv6 support],samba_cv_HAVE_IPV6,[
-AC_TRY_COMPILE([
-#include <stdlib.h> /* for NULL */
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netdb.h>],
-[
-struct sockaddr_storage sa_store;
-struct addrinfo *ai = NULL;
-struct in6_addr in6addr;
-int s = socket(AF_INET6, SOCK_STREAM, 0);
-int ret = getaddrinfo(NULL, NULL, NULL, &ai);
-if (ret != 0) {
-	const char *es = gai_strerror(ret);
-}
-freeaddrinfo(ai);
-],
-samba_cv_HAVE_IPV6=yes,samba_cv_HAVE_IPV6=no)])
-if test x"$samba_cv_HAVE_IPV6" = x"yes"; then
-    AC_DEFINE(HAVE_IPV6,1,[Whether the system has IPv6 support])
-fi
 
 ################################################
 # look for a method of setting the effective uid
@@ -5727,8 +5632,8 @@ case "$host_os" in
 		NSSSONAMEVERSIONSUFFIX=".1"
 		WINBIND_NSS_EXTRA_OBJS="nsswitch/winbind_nss_solaris.o \
 		    nsswitch/winbind_nss_linux.o"
-		WINBIND_NSS_EXTRA_LIBS="-lsocket"
-		PAM_WINBIND_EXTRA_LIBS="-lsocket"
+		WINBIND_NSS_EXTRA_LIBS="${LIBREPLACE_NETWORK_LIBS}"
+		PAM_WINBIND_EXTRA_LIBS="${LIBREPLACE_NETWORK_LIBS}"
 		;;
 	*hpux11*)
 		WINBIND_NSS_EXTRA_OBJS="nsswitch/winbind_nss_solaris.o"
@@ -5766,7 +5671,7 @@ AC_ARG_WITH(winbind,
 # We need unix domain sockets for winbind
 
 if test x"$HAVE_WINBIND" = x"yes"; then
-	if test x"$samba_cv_unixsocket" = x"no"; then
+	if test x"$libreplace_cv_HAVE_UNIXSOCKET" = x"no"; then
 		winbind_no_reason=", no unix domain socket support on $host_os"
 		HAVE_WINBIND=no
 	fi
