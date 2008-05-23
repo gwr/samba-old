@@ -130,7 +130,8 @@ bool send_getdc_request(TALLOC_CTX *mem_ctx,
 			struct messaging_context *msg_ctx,
 			struct sockaddr_storage *dc_ss,
 			const char *domain_name,
-			const DOM_SID *sid)
+			const DOM_SID *sid,
+			uint32_t nt_version)
 {
 	struct in_addr dc_ip;
 	const char *my_acct_name = NULL;
@@ -172,7 +173,7 @@ bool send_getdc_request(TALLOC_CTX *mem_ctx,
 	s->mailslot_name	= my_mailslot;
 	s->acct_control		= ACB_WSTRUST;
 	s->sid			= my_sid;
-	s->nt_version		= 1;
+	s->nt_version		= nt_version;
 	s->lmnt_token		= 0xffff;
 	s->lm20_token		= 0xffff;
 
@@ -196,15 +197,20 @@ bool send_getdc_request(TALLOC_CTX *mem_ctx,
 bool receive_getdc_response(TALLOC_CTX *mem_ctx,
 			    struct sockaddr_storage *dc_ss,
 			    const char *domain_name,
-			    const char **dc_name)
+			    uint32_t *nt_version,
+			    const char **dc_name,
+			    union nbt_cldap_netlogon **reply)
 {
 	struct packet_struct *packet;
 	const char *my_mailslot = NULL;
 	struct in_addr dc_ip;
 	DATA_BLOB blob;
-	struct nbt_ntlogon_packet r;
+	union nbt_cldap_netlogon r;
 	union dgram_message_body p;
 	enum ndr_err_code ndr_err;
+
+	const char *returned_dc = NULL;
+	const char *returned_domain = NULL;
 
 	if (dc_ss->ss_family != AF_INET) {
 		return false;
@@ -254,26 +260,80 @@ bool receive_getdc_response(TALLOC_CTX *mem_ctx,
 		return false;
 	}
 
+	if (DEBUGLEVEL >= 10) {
+		NDR_PRINT_DEBUG(dgram_smb_packet, &p);
+	}
+
 	blob = p.smb.body.trans.data;
 
-	ndr_err = ndr_pull_struct_blob(&blob, mem_ctx, &r,
-		       (ndr_pull_flags_fn_t)ndr_pull_nbt_ntlogon_packet);
-	if (!NDR_ERR_CODE_IS_SUCCESS(ndr_err)) {
-		DEBUG(0,("failed to parse packet\n"));
+	if (!pull_mailslot_cldap_reply(mem_ctx, &blob,
+				       &r, nt_version))
+	{
 		return false;
 	}
 
-	if (DEBUGLEVEL >= 10) {
-		NDR_PRINT_DEBUG(nbt_ntlogon_packet, &r);
+	switch (*nt_version) {
+		case 1:
+		case 16:
+		case 17:
+
+			returned_domain = r.logon1.domain_name;
+			returned_dc = r.logon1.pdc_name;
+			break;
+		case 2:
+		case 3:
+		case 18:
+		case 19:
+			returned_domain = r.logon3.domain_name;
+			returned_dc = r.logon3.pdc_name;
+			break;
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+			returned_domain = r.logon5.domain;
+			returned_dc = r.logon5.pdc_name;
+			break;
+		case 8:
+		case 9:
+		case 10:
+		case 11:
+		case 12:
+		case 13:
+		case 14:
+		case 15:
+			returned_domain = r.logon13.domain;
+			returned_dc = r.logon13.pdc_name;
+			break;
+		case 20:
+		case 21:
+		case 22:
+		case 23:
+		case 24:
+		case 25:
+		case 26:
+		case 27:
+		case 28:
+			returned_domain = r.logon15.domain;
+			returned_dc = r.logon15.pdc_name;
+			break;
+		case 29:
+		case 30:
+		case 31:
+			returned_domain = r.logon29.domain;
+			returned_dc = r.logon29.pdc_name;
+			break;
+		default:
+			return false;
 	}
 
-	if (!strequal(r.req.reply.domain, domain_name)) {
+	if (!strequal(returned_domain, domain_name)) {
 		DEBUG(3, ("GetDC: Expected domain %s, got %s\n",
-			  domain_name, r.req.reply.domain));
+			  domain_name, returned_domain));
 		return false;
 	}
 
-	*dc_name = talloc_strdup(mem_ctx, r.req.reply.server);
+	*dc_name = talloc_strdup(mem_ctx, returned_dc);
 	if (!*dc_name) {
 		return false;
 	}
@@ -281,8 +341,16 @@ bool receive_getdc_response(TALLOC_CTX *mem_ctx,
 	if (**dc_name == '\\')	*dc_name += 1;
 	if (**dc_name == '\\')	*dc_name += 1;
 
+	if (reply) {
+		*reply = (union nbt_cldap_netlogon *)talloc_memdup(
+			mem_ctx, &r, sizeof(union nbt_cldap_netlogon));
+		if (!*reply) {
+			return false;
+		}
+	}
+
 	DEBUG(10, ("GetDC gave name %s for domain %s\n",
-		   *dc_name, r.req.reply.domain));
+		   *dc_name, returned_domain));
 
 	return True;
 }
