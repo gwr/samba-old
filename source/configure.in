@@ -5591,6 +5591,26 @@ if test x"$samba_cv_HAVE_POSIX_FADVISE" = x"yes"; then
              [Whether posix_fadvise is available])
 fi
 
+############################################
+# See if we have the Linux splice syscall.
+
+AC_CACHE_CHECK([for Linux splice],
+                samba_cv_HAVE_LINUX_SPLICE,[
+    AC_TRY_LINK([
+#if defined(HAVE_UNISTD_H)
+#include <unistd.h>
+#endif
+#include <fcntl.h>],
+    [long ret = splice(0,0,1,0,400,0);],
+    samba_cv_HAVE_LINUX_SPLICE=yes,
+    samba_cv_HAVE_LINUX_SPLICE=no)])
+
+if test x"$samba_cv_HAVE_LINUX_SPLICE" = x"yes"; then
+  AC_DEFINE(HAVE_LINUX_SPLICE,1,
+             [Whether Linux splice is available])
+fi
+
+AC_HAVE_DECL(splice, [#include <fcntl.h>])
 
 
 #################################################
@@ -5713,19 +5733,19 @@ else
 	BUILD_LIBWBCLIENT_SHARED=yes
 fi
 
+LIBWBCLIENT_SHARED_TARGET=bin/libwbclient.$SHLIBEXT
+LIBWBCLIENT_STATIC_TARGET=bin/libwbclient.a
 if test $BLDSHARED = true -a x"$HAVE_WINBIND" = x"yes" -a x"$BUILD_LIBWBCLIENT_SHARED" = x"yes"; then
 	NSS_MODULES="${WINBIND_NSS} ${WINBIND_WINS_NSS}"
 	## Only worry about libwbclient if we have shared library support
 	## and winbindd
-        LIBWBCLIENT_SHARED_TARGET=bin/libwbclient.$SHLIBEXT
-        LIBWBCLIENT_SHARED=bin/libwbclient.$SHLIBEXT
+        LIBWBCLIENT_SHARED=$LIBWBCLIENT_SHARED_TARGET
         LIBWBCLIENT=libwbclient
 	INSTALL_LIBWBCLIENT=installlibwbclient
 	UNINSTALL_LIBWBCLIENT=uninstalllibwbclient
 	WINBIND_LIBS="-lwbclient"
 else
-	LIBWBCLIENT_STATIC_TARGET=bin/libwbclient.a
-	LIBWBCLIENT_STATIC=bin/libwbclient.a
+	LIBWBCLIENT_STATIC=$LIBWBCLIENT_STATIC_TARGET
 fi
 
 if test x"$HAVE_WINBIND" = x"yes"; then
