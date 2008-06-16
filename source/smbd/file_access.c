@@ -86,11 +86,6 @@ bool can_delete_file_in_directory(connection_struct *conn, const char *fname)
 		return True;
 	}
 
-	/* Check primary owner write access. */
-	if (current_user.ut.uid == sbuf.st_uid) {
-		return (sbuf.st_mode & S_IWUSR) ? True : False;
-	}
-
 #ifdef S_ISVTX
 	/* sticky bit means delete only by owner or root. */
 	if (sbuf.st_mode & S_ISVTX) {
@@ -116,7 +111,11 @@ bool can_delete_file_in_directory(connection_struct *conn, const char *fname)
 
 	/* now for ACL checks */
 
-	return can_access_file_acl(conn, dname, &sbuf, FILE_WRITE_DATA);
+	if (can_access_file_acl(conn, fname, NULL, DELETE_ACCESS)) {
+		return True;
+	}
+
+	return can_access_file_acl(conn, dname, &sbuf, FILE_DELETE_CHILD);
 }
 
 /****************************************************************************
