@@ -367,8 +367,9 @@ static bool parse_msdfs_symlink(TALLOC_CTX *ctx,
 		reflist[i].ttl = REFERRAL_TTL;
 		DEBUG(10, ("parse_msdfs_symlink: Created alt path: %s\n",
 					reflist[i].alternate_path));
-		*refcount += 1;
 	}
+
+	*refcount = count;
 
 	TALLOC_FREE(alt_path);
 	return True;
@@ -1501,6 +1502,7 @@ static int form_junctions(TALLOC_CTX *ctx,
 	if (!jucn[cnt].service_name || !jucn[cnt].volume_name) {
 		goto out;
 	}
+	jucn[cnt].comment = "";
 	jucn[cnt].referral_count = 1;
 
 	ref = jucn[cnt].referral_list = TALLOC_ZERO_P(ctx, struct referral);
@@ -1539,7 +1541,6 @@ static int form_junctions(TALLOC_CTX *ctx,
 	while ((dname = vfs_readdirname(&conn, dirp)) != NULL) {
 		char *link_target = NULL;
 		if (cnt >= jn_remain) {
-			SMB_VFS_CLOSEDIR(&conn,dirp);
 			DEBUG(2, ("form_junctions: ran out of MSDFS "
 				"junction slots"));
 			goto out;
@@ -1561,6 +1562,7 @@ static int form_junctions(TALLOC_CTX *ctx,
 						!jucn[cnt].volume_name) {
 					goto out;
 				}
+				jucn[cnt].comment = "";
 				cnt++;
 			}
 		}
