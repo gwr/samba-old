@@ -43,7 +43,7 @@ struct event_context *nmbd_event_context(void)
 	static struct event_context *ctx;
 
 	if (!ctx && !(ctx = event_context_init(NULL))) {
-		return NULL;
+		smb_panic("Could not init nmbd event context");
 	}
 	return ctx;
 }
@@ -54,7 +54,7 @@ struct messaging_context *nmbd_messaging_context(void)
 
 	if (!ctx && !(ctx = messaging_init(NULL, server_id_self(),
 					   nmbd_event_context()))) {
-		return NULL;
+		smb_panic("Could not init nmbd messaging context");
 	}
 	return ctx;
 }
@@ -761,11 +761,6 @@ static bool open_sockets(bool isdaemon, int port)
 	{ NULL }
 	};
 	TALLOC_CTX *frame = talloc_stackframe(); /* Setup tos. */
-
-	if (nmbd_messaging_context() == NULL) {
-		DEBUG(0, ("Could not init messaging context\n"));
-		exit(1);
-	}
 
 	db_tdb2_setup_messaging(NULL, false);
 
