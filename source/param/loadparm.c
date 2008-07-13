@@ -195,8 +195,7 @@ struct global {
 	bool bWinbindOfflineLogon;
 	bool bWinbindNormalizeNames;
 	bool bWinbindRpcOnly;
-	char **szIdmapDomains;
-	char **szIdmapBackend; /* deprecated */
+	char *szIdmapBackend;
 	char *szIdmapAllocBackend;
 	char *szAddShareCommand;
 	char *szChangeShareCommand;
@@ -4238,17 +4237,8 @@ static struct parm_struct parm_table[] = {
 		.flags		= FLAG_ADVANCED,
 	},
 	{
-		.label		= "idmap domains",
-		.type		= P_LIST,
-		.p_class	= P_GLOBAL,
-		.ptr		= &Globals.szIdmapDomains,
-		.special	= NULL,
-		.enum_list	= NULL,
-		.flags		= FLAG_ADVANCED,
-	},
-	{
 		.label		= "idmap backend",
-		.type		= P_LIST,
+		.type		= P_STRING,
 		.p_class	= P_GLOBAL,
 		.ptr		= &Globals.szIdmapBackend,
 		.special	= NULL,
@@ -4804,6 +4794,7 @@ static void init_globals(bool first_time_only)
 	Globals.bKernelOplocks = True;
 
 	Globals.bAllowTrustedDomains = True;
+	string_set(&Globals.szIdmapBackend, "tdb");
 
 	string_set(&Globals.szTemplateShell, "/bin/false");
 	string_set(&Globals.szTemplateHomedir, "/home/%D/%U");
@@ -5070,8 +5061,7 @@ FN_GLOBAL_BOOL(lp_winbind_offline_logon, &Globals.bWinbindOfflineLogon)
 FN_GLOBAL_BOOL(lp_winbind_normalize_names, &Globals.bWinbindNormalizeNames)
 FN_GLOBAL_BOOL(lp_winbind_rpc_only, &Globals.bWinbindRpcOnly)
 
-FN_GLOBAL_LIST(lp_idmap_domains, &Globals.szIdmapDomains)
-FN_GLOBAL_LIST(lp_idmap_backend, &Globals.szIdmapBackend) /* deprecated */
+FN_GLOBAL_CONST_STRING(lp_idmap_backend, &Globals.szIdmapBackend) /* deprecated */
 FN_GLOBAL_STRING(lp_idmap_alloc_backend, &Globals.szIdmapAllocBackend)
 FN_GLOBAL_INTEGER(lp_idmap_cache_time, &Globals.iIdmapCacheTime)
 FN_GLOBAL_INTEGER(lp_idmap_negative_cache_time, &Globals.iIdmapNegativeCacheTime)
