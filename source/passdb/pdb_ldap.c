@@ -4636,7 +4636,9 @@ static bool ldapgroup2displayentry(struct ldap_search_state *state,
 			DEBUG(0,("unkown group type: %d\n", group_type));
 			return False;
 	}
-	
+
+	result->acct_flags = 0;
+
 	return True;
 }
 
@@ -4973,7 +4975,7 @@ static NTSTATUS ldapsam_create_user(struct pdb_methods *my_methods,
 	rc = smbldap_search_suffix(ldap_state->smbldap_state, filter, NULL, &result);
 	if (rc != LDAP_SUCCESS) {
 		DEBUG(0,("ldapsam_create_user: ldap search failed!\n"));
-		return NT_STATUS_UNSUCCESSFUL;
+		return NT_STATUS_ACCESS_DENIED;
 	}
 	talloc_autofree_ldapmsg(tmp_ctx, result);
 
@@ -5664,7 +5666,7 @@ static NTSTATUS ldapsam_set_primary_group(struct pdb_methods *my_methods,
 	DEBUG(0,("ldapsam_set_primary_group: Attempt to set primary group for user [%s]\n", pdb_get_username(sampass)));
 
 	if (!sid_to_gid(pdb_get_group_sid(sampass), &gid)) {
-		DEBUG(0,("ldapsam_set_primary_group: failed to retieve gid from user's group SID!\n"));
+		DEBUG(0,("ldapsam_set_primary_group: failed to retrieve gid from user's group SID!\n"));
 		return NT_STATUS_UNSUCCESSFUL;
 	}
 	gidstr = talloc_asprintf(mem_ctx, "%d", gid);
