@@ -5370,7 +5370,7 @@ static param_opt_struct *get_parametrics(int snum, const char *type, const char 
 	}
 
 	while (data) {
-		if (StrCaseCmp(data->key, param_key) == 0) {
+		if (strwicmp(data->key, param_key) == 0) {
 			string_free(&param_key);
 			return data;
 		}
@@ -5382,7 +5382,7 @@ static param_opt_struct *get_parametrics(int snum, const char *type, const char 
 		/* but only if we are not already working with Globals */
 		data = Globals.param_opt;
 		while (data) {
-		        if (strcmp(data->key, param_key) == 0) {
+		        if (strwicmp(data->key, param_key) == 0) {
 			        string_free(&param_key);
 				return data;
 			}
@@ -6426,7 +6426,7 @@ static void copy_service(struct service *pserviceDest, struct service *pserviceS
 		/* Traverse destination */
 		while (pdata) {
 			/* If we already have same option, override it */
-			if (strcmp(pdata->key, data->key) == 0) {
+			if (strwicmp(pdata->key, data->key) == 0) {
 				string_free(&pdata->value);
 				TALLOC_FREE(data->list);
 				pdata->value = SMB_STRDUP(data->value);
@@ -7134,7 +7134,7 @@ bool lp_do_parameter(int snum, const char *pszParmName, const char *pszParmValue
 			/* Traverse destination */
 			while (data) {
 				/* If we already have same option, override it */
-				if (strcmp(data->key, param_key) == 0) {
+				if (strwicmp(data->key, param_key) == 0) {
 					string_free(&data->value);
 					TALLOC_FREE(data->list);
 					data->value = SMB_STRDUP(pszParmValue);
