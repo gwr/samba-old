@@ -83,7 +83,8 @@ struct db_context *db_open(TALLOC_CTX *mem_ctx,
 			if (result == NULL) {
 				DEBUG(0,("failed to attach to ctdb %s\n",
 					 partname));
-				return NULL;
+				smb_panic("failed to attach to a ctdb "
+					  "database");
 			}
 		}
 	}
@@ -118,7 +119,7 @@ struct db_context *db_open_trans(TALLOC_CTX *mem_ctx,
 	if (tdb_flags & TDB_CLEAR_IF_FIRST) {
 		DEBUG(0,("db_open_trans: called with TDB_CLEAR_IF_FIRST: %s\n",
 			 name));
-		return NULL;
+		smb_panic("db_open_trans: called with TDB_CLEAR_IF_FIRST");
 	}
 
 #ifdef CLUSTER_SUPPORT
@@ -150,6 +151,8 @@ struct db_context *db_open_trans(TALLOC_CTX *mem_ctx,
 			if (result == NULL) {
 				DEBUG(0,("failed to attach to ctdb %s\n",
 					 partname));
+				smb_panic("failed to attach to a ctdb "
+					  "database");
 			}
 			return result;
 		}
