@@ -114,7 +114,7 @@ static NTSTATUS db_ctdb_delete(struct db_record *rec)
 	data.dptr = (uint8 *)&crec->header;
 	data.dsize = sizeof(crec->header);
 
-	ret = tdb_store(crec->ctdb_ctx->wtdb->tdb, rec->key, data, TDB_REPLACE);
+	ret = tdb_trans_store(crec->ctdb_ctx->wtdb->tdb, rec->key, data, TDB_REPLACE);
 
 	return (ret == 0) ? NT_STATUS_OK : NT_STATUS_INTERNAL_DB_CORRUPTION;
 }
