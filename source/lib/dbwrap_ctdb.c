@@ -49,7 +49,7 @@ static NTSTATUS db_ctdb_store(struct db_record *rec, TDB_DATA data, int flag)
 	memcpy(cdata.dptr, &crec->header, sizeof(crec->header));
 	memcpy(cdata.dptr + sizeof(crec->header), data.dptr, data.dsize);
 
-	ret = tdb_store(crec->ctdb_ctx->wtdb->tdb, rec->key, cdata, TDB_REPLACE);
+	ret = tdb_trans_store(crec->ctdb_ctx->wtdb->tdb, rec->key, cdata, TDB_REPLACE);
 
 	SAFE_FREE(cdata.dptr);
 
