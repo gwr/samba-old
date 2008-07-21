@@ -83,7 +83,7 @@ static NTSTATUS db_ctdb_store_persistent(struct db_record *rec, TDB_DATA data, i
 	
 	/* now tell ctdbd to update this record on all other nodes */
 	if (NT_STATUS_IS_OK(status)) {
-		ret = tdb_store(crec->ctdb_ctx->wtdb->tdb, rec->key, cdata, TDB_REPLACE);
+		ret = tdb_trans_store(crec->ctdb_ctx->wtdb->tdb, rec->key, cdata, TDB_REPLACE);
 		status = (ret == 0) ? NT_STATUS_OK : NT_STATUS_INTERNAL_DB_CORRUPTION;
 	}
 
