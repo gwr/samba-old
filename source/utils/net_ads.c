@@ -821,7 +821,9 @@ static int net_ads_leave(int argc, const char **argv)
 		return -1;
 	}
 
-	use_in_memory_ccache();
+	if (opt_kerberos) {
+		use_in_memory_ccache();
+	}
 
 	werr = libnet_init_UnjoinCtx(ctx, &r);
 	if (!W_ERROR_IS_OK(werr)) {
@@ -1124,7 +1126,9 @@ int net_ads_join(int argc, const char **argv)
 		goto fail;
 	}
 
-	use_in_memory_ccache();
+	if (opt_kerberos) {
+		use_in_memory_ccache();
+	}
 
 	werr = libnet_init_JoinCtx(ctx, &r);
 	if (!W_ERROR_IS_OK(werr)) {
@@ -1180,6 +1184,7 @@ int net_ads_join(int argc, const char **argv)
 	r->in.os_version	= os_version;
 	r->in.dc_name		= opt_host;
 	r->in.admin_account	= opt_user_name;
+	r->in.use_kerberos	= opt_kerberos;
 	r->in.admin_password	= net_prompt_pass(opt_user_name);
 	r->in.debug		= true;
 	r->in.modify_config	= modify_config;
