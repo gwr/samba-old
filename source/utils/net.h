@@ -86,6 +86,7 @@ enum netdom_domain_t { ND_TYPE_NT4, ND_TYPE_AD };
 #define NET_MODE_SHARE_MIGRATE 1
 
 extern int opt_maxusers;
+extern int opt_kerberos;
 extern const char *opt_comment;
 extern const char *opt_container;
 extern int opt_flags;

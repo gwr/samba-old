@@ -68,6 +68,7 @@ int opt_stdin = 0;
 int opt_port = 0;
 int opt_verbose = 0;
 int opt_maxusers = -1;
+int opt_kerberos = 0;
 const char *opt_comment = "";
 const char *opt_container = NULL;
 int opt_flags = -1;
@@ -1043,6 +1044,7 @@ static struct functable net_func[] = {
 		{"stdin",	'i', POPT_ARG_NONE,   &opt_stdin},
 		{"timeout",	't', POPT_ARG_INT,    &opt_timeout},
 		{"machine-pass",'P', POPT_ARG_NONE,   &opt_machine_pass},
+		{"kerberos",    'k', POPT_ARG_NONE,   &opt_kerberos},
 		{"myworkgroup", 'W', POPT_ARG_STRING, &opt_workgroup},
 		{"verbose",	'v', POPT_ARG_NONE,   &opt_verbose},
 		{"test",	'T', POPT_ARG_NONE,   &opt_testmode},
