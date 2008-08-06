@@ -1507,7 +1507,7 @@ static struct parm_struct parm_table[] = {
 		.ptr		= &sDefault.bAclGroupControl,
 		.special	= NULL,
 		.enum_list	= NULL,
-		.flags		= FLAG_ADVANCED | FLAG_GLOBAL | FLAG_SHARE | FLAG_DEPRECATED,
+		.flags		= FLAG_ADVANCED | FLAG_GLOBAL | FLAG_SHARE,
 	},
 	{
 		.label		= "acl map full control",
@@ -5380,7 +5380,7 @@ static param_opt_struct *get_parametrics(int snum, const char *type, const char 
 	}
 
 	while (data) {
-		if (strcasecmp(data->key, param_key) == 0) {
+		if (StrCaseCmp(data->key, param_key) == 0) {
 			string_free(&param_key);
 			return data;
 		}
@@ -8900,15 +8900,6 @@ bool lp_load_with_registry_shares(const char *pszFname,
 			  initialize_globals,
 			  true,
 			  true);
-}
-
-/***************************************************************************
- Reset the max number of services.
-***************************************************************************/
-
-void lp_resetnumservices(void)
-{
-	iNumServices = 0;
 }
 
 /***************************************************************************

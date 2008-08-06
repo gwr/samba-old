@@ -389,7 +389,7 @@ WERROR regdb_init(void)
 				      REG_TDB_FLAGS, O_RDWR|O_CREAT, 0600);
 		if (!regdb) {
 			werr = ntstatus_to_werror(map_nt_error_from_unix(errno));
-			DEBUG(0,("regdb_init: Failed to open registry %s (%s)\n",
+			DEBUG(1,("regdb_init: Failed to open registry %s (%s)\n",
 				state_path("registry.tdb"), strerror(errno) ));
 			return werr;
 		}
@@ -408,7 +408,7 @@ WERROR regdb_init(void)
 			   vers_id, REGVER_V1));
 		status = dbwrap_trans_store_int32(regdb, vstring, REGVER_V1);
 		if (!NT_STATUS_IS_OK(status)) {
-			DEBUG(0, ("regdb_init: error storing %s = %d: %s\n",
+			DEBUG(1, ("regdb_init: error storing %s = %d: %s\n",
 				  vstring, REGVER_V1, nt_errstr(status)));
 			return ntstatus_to_werror(status);
 		} else {
@@ -693,8 +693,15 @@ bool regdb_store_keys(const char *key, REGSUBKEY_CTR *ctr)
 		if (!path) {
 			goto cancel;
 		}
-		/* Ignore errors here, we might have no values around */
-		dbwrap_delete_bystring(regdb, path);
+		status = dbwrap_delete_bystring(regdb, path);
+		/* Don't fail if there are no values around. */
+		if (!NT_STATUS_IS_OK(status) &&
+		    !NT_STATUS_EQUAL(status, NT_STATUS_NOT_FOUND))
+		{
+			DEBUG(1, ("Deleting %s failed: %s\n", path,
+				  nt_errstr(status)));
+			goto cancel;
+		}
 		TALLOC_FREE(path);
 
 		/* (c) Delete the list of subkeys of this key */
@@ -708,8 +715,12 @@ bool regdb_store_keys(const char *key, REGSUBKEY_CTR *ctr)
 			goto cancel;
 		}
 		status = dbwrap_delete_bystring(regdb, path);
-		if (!NT_STATUS_IS_OK(status)) {
-			DEBUG(1, ("Deleting %s failed\n", path));
+		/* Don't fail if the subkey record was not found. */
+		if (!NT_STATUS_IS_OK(status) &&
+		    !NT_STATUS_EQUAL(status, NT_STATUS_NOT_FOUND))
+		{
+			DEBUG(1, ("Deleting %s failed: %s\n", path,
+				  nt_errstr(status)));
 			goto cancel;
 		}
 		TALLOC_FREE(path);
@@ -921,21 +932,22 @@ int regdb_fetch_keys(const char *key, REGSUBKEY_CTR *ctr)
 	DEBUG(11,("regdb_fetch_keys: Enter key => [%s]\n", key ? key : "NULL"));
 
 	if (!regdb_key_exists(key)) {
-		goto fail;
+		goto done;
 	}
 
 	ctr->seqnum = regdb_get_seqnum();
 
 	value = regdb_fetch_key_internal(frame, key);
 
-	buf = value.dptr;
-	buflen = value.dsize;
-
-	if ( !buf ) {
-		DEBUG(5,("regdb_fetch_keys: tdb lookup failed to locate key [%s]\n", key));
-		goto fail;
+	if (value.dptr == NULL) {
+		DEBUG(10, ("regdb_fetch_keys: no subkeys found for key [%s]\n",
+			   key));
+		ret = 0;
+		goto done;
 	}
 
+	buf = value.dptr;
+	buflen = value.dsize;
 	len = tdb_unpack( buf, buflen, "d", &num_items);
 
 	for (i=0; i<num_items; i++) {
@@ -944,14 +956,14 @@ int regdb_fetch_keys(const char *key, REGSUBKEY_CTR *ctr)
 		if (!W_ERROR_IS_OK(werr)) {
 			DEBUG(5, ("regdb_fetch_keys: regsubkey_ctr_addkey "
 				  "failed: %s\n", dos_errstr(werr)));
-			goto fail;
+			goto done;
 		}
 	}
 
 	DEBUG(11,("regdb_fetch_keys: Exit [%d] items\n", num_items));
 
 	ret = num_items;
- fail:
+done:
 	TALLOC_FREE(frame);
 	return ret;
 }
@@ -1124,8 +1136,7 @@ bool regdb_store_values( const char *key, REGVAL_CTR *values )
 		goto done;
 	}
 
-	status = dbwrap_trans_store(regdb, string_term_tdb_data(keystr), data,
-				    TDB_REPLACE);
+	status = dbwrap_trans_store_bystring(regdb, keystr, data, TDB_REPLACE);
 
 	result = NT_STATUS_IS_OK(status);
 
@@ -1199,8 +1210,7 @@ static WERROR regdb_set_secdesc(const char *key,
 
 	if (secdesc == NULL) {
 		/* assuming a delete */
-		status = dbwrap_trans_delete(regdb,
-					     string_term_tdb_data(tdbkey));
+		status = dbwrap_trans_delete_bystring(regdb, tdbkey);
 		if (NT_STATUS_IS_OK(status)) {
 			err = WERR_OK;
 		} else {
@@ -1216,8 +1226,7 @@ static WERROR regdb_set_secdesc(const char *key,
 		goto done;
 	}
 
-	status = dbwrap_trans_store(regdb, string_term_tdb_data(tdbkey),
-				    tdbdata, 0);
+	status = dbwrap_trans_store_bystring(regdb, tdbkey, tdbdata, 0);
 	if (!NT_STATUS_IS_OK(status)) {
 		err = ntstatus_to_werror(status);
 		goto done;

@@ -502,8 +502,14 @@ static void refresh_sequence_number(struct winbindd_domain *domain, bool force)
 	   mode domain or not.  And that we can contact it. */
 
 	if ( winbindd_can_contact_domain( domain ) ) {		
+		struct winbindd_methods *orig_backend = domain->backend;
 		status = domain->backend->sequence_number(domain, 
 							  &domain->sequence_number);
+		if (domain->backend != orig_backend) {
+			/* Try again. */
+			status = domain->backend->sequence_number(domain,
+                                                          &domain->sequence_number);
+		}
 	} else {
 		/* just use the current time */
 		status = NT_STATUS_OK;
@@ -524,7 +530,7 @@ static void refresh_sequence_number(struct winbindd_domain *domain, bool force)
 	domain->last_status = status;
 	domain->last_seq_check = time(NULL);
 	
-	/* save the new sequence number ni the cache */
+	/* save the new sequence number in the cache */
 	store_cache_seqnum( domain );
 
 done:
@@ -2072,7 +2078,9 @@ static NTSTATUS trusted_domains(struct winbindd_domain *domain,
 	for (i=0; i<(*num_domains); i++) {
 		(*names)[i] = centry_string(centry, mem_ctx);
 		(*alt_names)[i] = centry_string(centry, mem_ctx);
-		centry_sid(centry, mem_ctx, &(*dom_sids)[i]);
+		if (!centry_sid(centry, mem_ctx, &(*dom_sids)[i])) {
+			sid_copy(&(*dom_sids)[i], &global_sid_NULL);
+		}
 	}
 
  	status = centry->status;
@@ -3543,8 +3551,11 @@ static bool add_wbdomain_to_tdc_array( struct winbindd_domain *new_dom,
 	list[idx].domain_name = talloc_strdup( list, new_dom->name );
 	list[idx].dns_name = talloc_strdup( list, new_dom->alt_name );
 
-	if ( !is_null_sid( &new_dom->sid ) )
+	if ( !is_null_sid( &new_dom->sid ) ) {
 		sid_copy( &list[idx].sid, &new_dom->sid );
+	} else {
+		sid_copy(&list[idx].sid, &global_sid_NULL);
+	}
 
 	if ( new_dom->domain_flags != 0x0 )
 		list[idx].trust_flags = new_dom->domain_flags;	
