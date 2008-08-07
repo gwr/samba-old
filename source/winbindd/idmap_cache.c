@@ -29,6 +29,7 @@
 
 struct idmap_cache_ctx {
 	TDB_CONTEXT *tdb;
+	bool enabled;
 };
 
 static int idmap_cache_destructor(struct idmap_cache_ctx *cache)
@@ -54,6 +55,11 @@ struct idmap_cache_ctx *idmap_cache_init(TALLOC_CTX *memctx)
 		return NULL;
 	}
 
+	cache->enabled = lp_parm_bool(-1, "idmap", "cache", True);
+	if (!cache->enabled) {
+		return cache;
+	}
+
 	cache_fname = lock_path("idmap_cache.tdb");
 
 	DEBUG(10, ("Opening cache file at %s\n", cache_fname));
@@ -75,7 +81,7 @@ void idmap_cache_shutdown(struct idmap_cache_ctx *cache)
 	talloc_free(cache);
 }
 
-NTSTATUS idmap_cache_build_sidkey(TALLOC_CTX *ctx, char **sidkey, const struct id_map *id)
+static NTSTATUS idmap_cache_build_sidkey(TALLOC_CTX *ctx, char **sidkey, const struct id_map *id)
 {
 	fstring sidstr;
 
@@ -89,7 +95,7 @@ NTSTATUS idmap_cache_build_sidkey(TALLOC_CTX *ctx, char **sidkey, const struct i
 	return NT_STATUS_OK;
 }
 
-NTSTATUS idmap_cache_build_idkey(TALLOC_CTX *ctx, char **idkey, const struct id_map *id)
+static NTSTATUS idmap_cache_build_idkey(TALLOC_CTX *ctx, char **idkey, const struct id_map *id)
 {
 	*idkey = talloc_asprintf(ctx, "IDMAP/%s/%lu",
 				(id->xid.type==ID_TYPE_UID)?"UID":"GID",
@@ -110,6 +116,10 @@ NTSTATUS idmap_cache_set(struct idmap_cache_ctx *cache, const struct id_map *id)
 	char *sidkey;
 	char *idkey;
 	char *valstr;
+
+	if (!cache->enabled) {
+		return NT_STATUS_OK;
+	}
 
 	/* Don't cache lookups in the S-1-22-{1,2} domain */
 	if ( (id->xid.type == ID_TYPE_UID) && 
@@ -192,6 +202,10 @@ NTSTATUS idmap_cache_set_negative_sid(struct idmap_cache_ctx *cache, const struc
 	char *sidkey;
 	char *valstr;
 
+	if (!cache->enabled) {
+		return NT_STATUS_OK;
+	}
+
 	ret = idmap_cache_build_sidkey(cache, &sidkey, id);
 	if (!NT_STATUS_IS_OK(ret)) return ret;
 
@@ -228,6 +242,10 @@ NTSTATUS idmap_cache_set_negative_id(struct idmap_cache_ctx *cache, const struct
 	char *idkey;
 	char *valstr;
 
+	if (!cache->enabled) {
+		return NT_STATUS_OK;
+	}
+
 	ret = idmap_cache_build_idkey(cache, &idkey, id);
 	if (!NT_STATUS_IS_OK(ret)) return ret;
 
@@ -256,7 +274,7 @@ done:
 	return ret;
 }
 
-NTSTATUS idmap_cache_fill_map(struct id_map *id, const char *value)
+static NTSTATUS idmap_cache_fill_map(struct id_map *id, const char *value)
 {
 	char *rem;
 
@@ -339,6 +357,10 @@ NTSTATUS idmap_cache_map_sid(struct idmap_cache_ctx *cache, struct id_map *id)
 
 	/* make sure it is marked as not mapped by default */
 	id->status = ID_UNKNOWN;
+
+	if (!cache->enabled) {
+		return NT_STATUS_NONE_MAPPED;
+	}
 	
 	ret = idmap_cache_build_sidkey(cache, &sidkey, id);
 	if (!NT_STATUS_IS_OK(ret)) return ret;
@@ -449,6 +471,10 @@ NTSTATUS idmap_cache_map_id(struct idmap_cache_ctx *cache, struct id_map *id)
 	/* make sure it is marked as unknown by default */
 	id->status = ID_UNKNOWN;
 	
+	if (!cache->enabled) {
+		return NT_STATUS_NONE_MAPPED;
+	}
+
 	ret = idmap_cache_build_idkey(cache, &idkey, id);
 	if (!NT_STATUS_IS_OK(ret)) return ret;
 
