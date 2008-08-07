@@ -1058,6 +1058,15 @@ static NTSTATUS idmap_new_mapping(TALLOC_CTX *ctx, struct id_map *map)
 		   (unsigned long)map->xid.id));
 	ret = dom->methods->set_mapping(dom, map);
 
+	if (NT_STATUS_EQUAL(ret, NT_STATUS_OBJECT_NAME_COLLISION)) {
+		struct id_map **ids;
+		DEBUG(5, ("Mapping for %s exists - retrying to map sid\n",
+			  sid_string_dbg(map->sid)));
+		ids = TALLOC_ZERO_ARRAY(ctx, struct id_map *, 2);
+		ids[0] = map;
+		ret = dom->methods->sids_to_unixids(dom, ids);
+	}
+
 	if ( ! NT_STATUS_IS_OK(ret)) {
 		/* something wrong here :-( */
 		DEBUG(2, ("Failed to commit mapping\n!"));

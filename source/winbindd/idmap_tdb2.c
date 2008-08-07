@@ -400,15 +400,18 @@ static TDB_DATA tdb2_fetch_bystring(TALLOC_CTX *mem_ctx, const char *keystr)
 static NTSTATUS tdb2_store_bystring(const char *keystr, TDB_DATA data, int flags)
 {
 	NTSTATUS ret;
-	NTSTATUS status = idmap_tdb2_open_perm_db();
-	if (!NT_STATUS_IS_OK(status)) {
-		return NT_STATUS_UNSUCCESSFUL;
+
+	ret = idmap_tdb2_open_perm_db();
+	if (!NT_STATUS_IS_OK(ret)) {
+		return ret;
 	}
 	ret = dbwrap_store_bystring(idmap_tdb2_perm, keystr, data, flags);
 	if (!NT_STATUS_IS_OK(ret)) {
-		ret = tdb_store_bystring(idmap_tdb2_tmp, keystr, data, flags) ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+		return ret;
 	}
-	return ret;
+	return (tdb_store_bystring(idmap_tdb2_tmp, keystr, data, flags) == 0)
+		? NT_STATUS_OK
+		: NT_STATUS_UNSUCCESSFUL;
 }
 
 /*
@@ -417,15 +420,18 @@ static NTSTATUS tdb2_store_bystring(const char *keystr, TDB_DATA data, int flags
 static NTSTATUS tdb2_delete_bystring(const char *keystr)
 {
 	NTSTATUS ret;
-	NTSTATUS status = idmap_tdb2_open_perm_db();
-	if (!NT_STATUS_IS_OK(status)) {
-		return NT_STATUS_UNSUCCESSFUL;
+
+	ret = idmap_tdb2_open_perm_db();
+	if (!NT_STATUS_IS_OK(ret)) {
+		return ret;
 	}
 	ret = dbwrap_delete_bystring(idmap_tdb2_perm, keystr);
 	if (!NT_STATUS_IS_OK(ret)) {
-		ret = tdb_delete_bystring(idmap_tdb2_tmp, keystr)  ? NT_STATUS_OK : NT_STATUS_UNSUCCESSFUL;
+		return ret;
 	}
-	return ret;
+	return (tdb_delete_bystring(idmap_tdb2_tmp, keystr) == 0)
+		? NT_STATUS_OK
+		: NT_STATUS_UNSUCCESSFUL;
 }
 
 /*
@@ -817,7 +823,6 @@ static NTSTATUS idmap_tdb2_set_mapping(struct idmap_domain *dom, const struct id
 	TDB_DATA data;
 	char *ksidstr, *kidstr;
 	struct db_record *update_lock = NULL;
-	struct db_record *rec = NULL;
 
 	/* make sure we initialized */
 	if ( ! dom->initialized) {
@@ -832,7 +837,6 @@ static NTSTATUS idmap_tdb2_set_mapping(struct idmap_domain *dom, const struct id
 	}
 
 	ksidstr = kidstr = NULL;
-	data.dptr = NULL;
 
 	/* TODO: should we filter a set_mapping using low/high filters ? */
 	
@@ -880,66 +884,25 @@ static NTSTATUS idmap_tdb2_set_mapping(struct idmap_domain *dom, const struct id
 		goto done;
 	}
 
-	/*
-	 * *DELETE* previous mappings if any. *
-	 */
-
-	/* First delete indexed on SID */
-
-	if (((rec = idmap_tdb2_perm->fetch_locked(
-		     idmap_tdb2_perm, update_lock,
-		     string_term_tdb_data(ksidstr))) != NULL)
-	    && (rec->value.dsize != 0)) {
-		struct db_record *rec2;
-
-		if ((rec2 = idmap_tdb2_perm->fetch_locked(
-			     idmap_tdb2_perm, update_lock, rec->value))
-		    != NULL) {
-			rec2->delete_rec(rec2);
-			TALLOC_FREE(rec2);
-		}
-
-		rec->delete_rec(rec);
-
-		tdb_delete(idmap_tdb2_tmp, rec->key);
-		tdb_delete(idmap_tdb2_tmp, rec->value);
-	}
-	TALLOC_FREE(rec);
-
-	/* Now delete indexed on unix ID */
-
-	if (((rec = idmap_tdb2_perm->fetch_locked(
-		     idmap_tdb2_perm, update_lock,
-		     string_term_tdb_data(kidstr))) != NULL)
-	    && (rec->value.dsize != 0)) {
-		struct db_record *rec2;
-
-		if ((rec2 = idmap_tdb2_perm->fetch_locked(
-			     idmap_tdb2_perm, update_lock, rec->value))
-		    != NULL) {
-			rec2->delete_rec(rec2);
-			TALLOC_FREE(rec2);
-		}
-
-		rec->delete_rec(rec);
-
-		tdb_delete(idmap_tdb2_tmp, rec->key);
-		tdb_delete(idmap_tdb2_tmp, rec->value);
-	}
-	TALLOC_FREE(rec);
-
-	if (!NT_STATUS_IS_OK(tdb2_store_bystring(ksidstr, string_term_tdb_data(kidstr),
-				TDB_INSERT))) {
-		DEBUG(0, ("Error storing SID -> ID\n"));
-		ret = NT_STATUS_UNSUCCESSFUL;
+	/* check wheter sid mapping is already present in db */
+	data = tdb2_fetch_bystring(ksidstr, ksidstr);
+	if (data.dptr) {
+		ret = NT_STATUS_OBJECT_NAME_COLLISION;
 		goto done;
 	}
-	if (!NT_STATUS_IS_OK(tdb2_store_bystring(kidstr, string_term_tdb_data(ksidstr),
-				TDB_INSERT))) {
-		DEBUG(0, ("Error storing ID -> SID\n"));
+
+	ret = tdb2_store_bystring(ksidstr, string_term_tdb_data(kidstr),
+				  TDB_INSERT);
+	if (!NT_STATUS_IS_OK(ret)) {
+		DEBUG(0, ("Error storing SID -> ID: %s\n", nt_errstr(ret)));
+		goto done;
+	}
+	ret = tdb2_store_bystring(kidstr, string_term_tdb_data(ksidstr),
+				  TDB_INSERT);
+	if (!NT_STATUS_IS_OK(ret)) {
+		DEBUG(0, ("Error storing ID -> SID: %s\n", nt_errstr(ret)));
 		/* try to remove the previous stored SID -> ID map */
 		tdb2_delete_bystring(ksidstr);
-		ret = NT_STATUS_UNSUCCESSFUL;
 		goto done;
 	}
 
@@ -949,7 +912,6 @@ static NTSTATUS idmap_tdb2_set_mapping(struct idmap_domain *dom, const struct id
 done:
 	talloc_free(ksidstr);
 	talloc_free(kidstr);
-	SAFE_FREE(data.dptr);
 	TALLOC_FREE(update_lock);
 	return ret;
 }
