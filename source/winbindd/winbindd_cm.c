@@ -862,7 +862,7 @@ static NTSTATUS cm_prepare_connection(const struct winbindd_domain *domain,
 			result = ads_ntstatus(ads_status);
 			if (NT_STATUS_IS_OK(result)) {
 				/* Ensure creds are stored for NTLMSSP authenticated pipe access. */
-				cli_init_creds(*cli, machine_account, domain->name, machine_password);
+				cli_init_creds(*cli, machine_account, lp_workgroup(), machine_password);
 				goto session_setup_done;
 			}
 		}
@@ -887,7 +887,7 @@ static NTSTATUS cm_prepare_connection(const struct winbindd_domain *domain,
 		result = ads_ntstatus(ads_status);
 		if (NT_STATUS_IS_OK(result)) {
 			/* Ensure creds are stored for NTLMSSP authenticated pipe access. */
-			cli_init_creds(*cli, machine_account, domain->name, machine_password);
+			cli_init_creds(*cli, machine_account, lp_workgroup(), machine_password);
 			goto session_setup_done;
 		}
 	}
@@ -924,6 +924,9 @@ static NTSTATUS cm_prepare_connection(const struct winbindd_domain *domain,
  anon_fallback:
 
 	/* Fall back to anonymous connection, this might fail later */
+	DEBUG(10,("cm_prepare_connection: falling back to anonymous "
+		"connection for DC %s\n",
+		controller ));
 
 	if (NT_STATUS_IS_OK(cli_session_setup(*cli, "", NULL, 0,
 					      NULL, 0, ""))) {
@@ -1916,6 +1919,10 @@ static bool cm_get_schannel_dcinfo(struct winbindd_domain *domain,
 	/* Return a pointer to the struct dcinfo from the
 	   netlogon pipe. */
 
+	if (!domain->conn.netlogon_pipe->dc) {
+		return false;
+	}
+
 	*ppdc = domain->conn.netlogon_pipe->dc;
 	return True;
 }
@@ -1941,6 +1948,7 @@ NTSTATUS cm_connect_sam(struct winbindd_domain *domain, TALLOC_CTX *mem_ctx,
 	if (conn->samr_pipe != NULL) {
 		goto done;
 	}
+
 
 	/*
 	 * No SAMR pipe yet. Attempt to get an NTLMSSP SPNEGO authenticated
