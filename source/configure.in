@@ -1036,7 +1036,7 @@ AC_TRY_LINK([#include <gpfs_gpl.h>],
 echo $samba_cv_HAVE_GPFS
 if test x"$samba_cv_HAVE_GPFS" = x"yes"; then
     AC_DEFINE(HAVE_GPFS,1,[Whether GPFS GPL libs are available])
-    default_shared_modules="$default_shared_modules vfs_gpfs vfs_gpfs_prefetch"
+    default_shared_modules="$default_shared_modules vfs_gpfs"
 fi
 LIBS="$save_LIBS"
 
