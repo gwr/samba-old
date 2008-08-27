@@ -242,14 +242,6 @@ install -m 755 source/nsswitch/libnss_winbind.so $RPM_BUILD_ROOT/%{_libarch}/lib
   ln -sf libnss_winbind.so  libnss_winbind.so.2 )
 # ( cd $RPM_BUILD_ROOT/%{_libarch}; ln -sf libnss_wins.so  libnss_wins.so.2 )
 
-# make install puts libmsrpc.so in the wrong place on x86_64
-#rm -f $RPM_BUILD_ROOT/usr/lib*/samba/libmsrpc.so $RPM_BUILD_ROOT/usr/lib*/samba/libmsrpc.a || true
-#install -m 755 source/bin/libmsrpc.so $RPM_BUILD_ROOT%{_libarchdir}/libmsrpc.so
-#install -m 755 source/bin/libmsrpc.a $RPM_BUILD_ROOT%{_libarchdir}/libmsrpc.a
-#install -m 644 source/include/libmsrpc.h $RPM_BUILD_ROOT%{_includedir}
-#rm -f $RPM_BUILD_ROOT%{_libarchdir}/samba/libmsrpc.*
-#ln -s /%{_libarchdir}/libmsrpc.so $RPM_BUILD_ROOT%{_libarchdir}/libmsrpc.so.0
-
 # Install pam_smbpass.so
 install -m755 source/bin/pam_smbpass.so $RPM_BUILD_ROOT/%{_libarch}/security/pam_smbpass.so
 
