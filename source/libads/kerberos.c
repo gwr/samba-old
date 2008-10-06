@@ -338,8 +338,13 @@ int ads_kinit_password(ADS_STRUCT *ads)
 			account_name = ads->auth.user_name;
 	}
 
-	if (asprintf(&s, "%s@%s", account_name, ads->auth.realm) == -1) {
-		return KRB5_CC_NOMEM;
+	if (strchr(account_name, '@') == NULL) {
+		if (asprintf(&s, "%s@%s", account_name,
+			     ads->auth.realm) == -1) {
+			return KRB5_CC_NOMEM;
+		}
+	} else {
+		s = SMB_STRDUP(account_name);
 	}
 
 	if (!ads->auth.password) {
