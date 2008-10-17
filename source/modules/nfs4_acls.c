@@ -531,15 +531,48 @@ static bool smbacl4_fill_ace4(
 	ace_v4->aceMask = ace_nt->access_mask &
 		(STD_RIGHT_ALL_ACCESS | SA_RIGHT_FILE_ALL_ACCESS);
 
-	se_map_generic(&ace_v4->aceMask, &file_generic_mapping);
+//	se_map_generic(&ace_v4->aceMask, &file_generic_mapping);
 
 	if (ace_v4->aceFlags!=ace_nt->flags)
-		DEBUG(9, ("ace_v4->aceFlags(0x%x)!=ace_nt->flags(0x%x)\n",
+		DEBUG(9, ("FIXME: ace_v4->aceFlags(0x%x)!=ace_nt->flags(0x%x)\n",
 			ace_v4->aceFlags, ace_nt->flags));
 
-	if (ace_v4->aceMask!=ace_nt->access_mask)
-		DEBUG(9, ("ace_v4->aceMask(0x%x)!=ace_nt->access_mask(0x%x)\n",
-			ace_v4->aceMask, ace_nt->access_mask));
+	if (ace_v4->aceMask!=ace_nt->access_mask){
+			
+		uint32 access_mask = ace_v4->aceMask & 
+			~(STD_RIGHT_ALL_ACCESS | SA_RIGHT_FILE_ALL_ACCESS);
+
+		/*
+		 * Handling for generic access mask bits 
+		 *  Generic all access     = 0x1f01ff
+		 *  Generic execute access = 0x1200a0
+		 *  Generic write access:  = 0x1d0116
+		 *  Generic read access    = 0x120089
+		*/
+		if (ace_nt->access_mask & GENERIC_RIGHT_ALL_ACCESS) {
+			ace_v4->aceMask |= GENERIC_RIGHTS_FILE_ALL_ACCESS;
+		}
+		if (ace_nt->access_mask & GENERIC_RIGHT_EXECUTE_ACCESS) {
+			ace_v4->aceMask |= GENERIC_RIGHTS_FILE_EXECUTE;
+		}
+		if (ace_nt->access_mask & GENERIC_RIGHT_WRITE_ACCESS) {
+			ace_v4->aceMask |= GENERIC_RIGHTS_FILE_WRITE;
+		}
+		if (ace_nt->access_mask & GENERIC_RIGHT_READ_ACCESS) {
+			ace_v4->aceMask |= GENERIC_RIGHTS_FILE_READ;
+		}
+
+		/*
+		 * Are they still bits which needs to be translated ? 
+		 */
+		access_mask &= ~(GENERIC_RIGHT_ALL_ACCESS | GENERIC_RIGHT_EXECUTE_ACCESS |  
+				GENERIC_RIGHT_WRITE_ACCESS | GENERIC_RIGHT_READ_ACCESS);
+
+		if (access_mask) {			
+			DEBUG(9, ("FIXME: ace_nt->access_mask(0x%x), access_mask(0x%x)\n", 
+				ace_nt->access_mask, access_mask));
+		}
+	}
 
 	if (sid_equal(&ace_nt->trustee, &global_sid_World)) {
 		ace_v4->who.special_id = SMB_ACE4_WHO_EVERYONE;
