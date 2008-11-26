@@ -9,6 +9,7 @@
  * Copyright (C) Andrew Bartlett <abartlet@samba.org> 2003
  * Copyright (C) Gerald (Jerry) Carter 2004-2007
  * Copyright (C) Luke Howard 2001-2004
+ * Copyright (C) Michael Adam 2008
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +26,7 @@
  */
 
 #include "includes.h"
+#include "winbindd.h"
 
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_IDMAP
@@ -43,31 +45,39 @@
 struct idmap_ad_context {
 	uint32_t filter_low_id;
 	uint32_t filter_high_id;
+	ADS_STRUCT *ads;
+	struct posix_schema *ad_schema;
+	enum wb_posix_mapping ad_map_type; /* WB_POSIX_MAP_UNKNOWN */
 };
 
 NTSTATUS init_module(void);
 
-static ADS_STRUCT *ad_idmap_ads = NULL;
-static struct posix_schema *ad_schema = NULL;
-static enum wb_posix_mapping ad_map_type = WB_POSIX_MAP_UNKNOWN;
-
 /************************************************************************
  ***********************************************************************/
 
-static ADS_STRUCT *ad_idmap_cached_connection_internal(void)
+static ADS_STATUS ad_idmap_cached_connection_internal(struct idmap_domain *dom)
 {
 	ADS_STRUCT *ads;
 	ADS_STATUS status;
 	bool local = False;
 	fstring dc_name;
 	struct sockaddr_storage dc_ip;
+	struct idmap_ad_context *ctx;
+	char *ldap_server = NULL;
+	char *realm = NULL;
+	struct winbindd_domain *wb_dom;
 
-	if (ad_idmap_ads != NULL) {
+	DEBUG(10, ("ad_idmap_cached_connection: called for domain '%s'\n",
+		   dom->name));
+
+	ctx = talloc_get_type(dom->private_data, struct idmap_ad_context);
+
+	if (ctx->ads != NULL) {
 
 		time_t expire;
 		time_t now = time(NULL);
 
-		ads = ad_idmap_ads;
+		ads = ctx->ads;
 
 		expire = MIN(ads->auth.tgt_expire, ads->auth.tgs_expire);
 
@@ -76,15 +86,15 @@ static ADS_STRUCT *ad_idmap_cached_connection_internal(void)
 			  (uint32)expire-(uint32)now, (uint32) expire, (uint32) now));
 
 		if ( ads->config.realm && (expire > time(NULL))) {
-			return ads;
+			return ADS_SUCCESS;
 		} else {
 			/* we own this ADS_STRUCT so make sure it goes away */
 			DEBUG(7,("Deleting expired krb5 credential cache\n"));
 			ads->is_mine = True;
 			ads_destroy( &ads );
 			ads_kdestroy(WINBIND_CCACHE_NAME);
-			ad_idmap_ads = NULL;
-			TALLOC_FREE( ad_schema );			
+			ctx->ads = NULL;
+			TALLOC_FREE( ctx->ad_schema );
 		}
 	}
 
@@ -93,9 +103,28 @@ static ADS_STRUCT *ad_idmap_cached_connection_internal(void)
 		setenv("KRB5CCNAME", WINBIND_CCACHE_NAME, 1);
 	}
 
-	if ( (ads = ads_init(lp_realm(), lp_workgroup(), NULL)) == NULL ) {
+	/*
+	 * At this point we only have the NetBIOS domain name.
+	 * Check if we can get server nam and realm from SAF cache
+	 * and the domain list.
+	 */
+	ldap_server = saf_fetch(dom->name);
+	DEBUG(10, ("ldap_server from saf cache: '%s'\n", ldap_server?ldap_server:""));
+
+	wb_dom = find_domain_from_name_noinit(dom->name);
+	if (wb_dom == NULL) {
+		DEBUG(10, ("find_domain_from_name_noinit did not find domain '%s'\n",
+			   dom->name));
+		realm = NULL;
+	} else {
+		DEBUG(10, ("find_domain_from_name_noinit found realm '%s' for "
+			  " domain '%s'\n", wb_dom->alt_name, dom->name));
+		realm = wb_dom->alt_name;
+	}
+
+	if ( (ads = ads_init(realm, dom->name, ldap_server)) == NULL ) {
 		DEBUG(1,("ads_init failed\n"));
-		return NULL;
+		return ADS_ERROR_NT(NT_STATUS_NO_MEMORY);
 	}
 
 	/* the machine acct password might have change - fetch it every time */
@@ -107,54 +136,57 @@ static ADS_STRUCT *ad_idmap_cached_connection_internal(void)
 
 	/* setup server affinity */
 
-	get_dc_name( NULL, ads->auth.realm, dc_name, &dc_ip );
+	get_dc_name(dom->name, realm, dc_name, &dc_ip );
 	
 	status = ads_connect(ads);
 	if (!ADS_ERR_OK(status)) {
 		DEBUG(1, ("ad_idmap_init: failed to connect to AD\n"));
 		ads_destroy(&ads);
-		return NULL;
+		return status;
 	}
 
 	ads->is_mine = False;
 
-	ad_idmap_ads = ads;
+	ctx->ads = ads;
 
-	return ads;
+	return ADS_SUCCESS;
 }
 
 /************************************************************************
  ***********************************************************************/
 
-static ADS_STRUCT *ad_idmap_cached_connection(void)
+static ADS_STATUS ad_idmap_cached_connection(struct idmap_domain *dom)
 {
-	ADS_STRUCT *ads = ad_idmap_cached_connection_internal();
-	
-	if ( !ads )
-		return NULL;
+	ADS_STATUS status;
+	struct idmap_ad_context * ctx;
+
+	status = ad_idmap_cached_connection_internal(dom);
+	if (!ADS_ERR_OK(status)) {
+		return status;
+	}
+
+	ctx = talloc_get_type(dom->private_data, struct idmap_ad_context);
 
 	/* if we have a valid ADS_STRUCT and the schema model is
 	   defined, then we can return here. */
 
-	if ( ad_schema )
-		return ads;
+	if ( ctx->ad_schema ) {
+		return ADS_SUCCESS;
+	}
 
 	/* Otherwise, set the schema model */
 
-	if ( (ad_map_type ==  WB_POSIX_MAP_SFU) ||
-	     (ad_map_type ==  WB_POSIX_MAP_SFU20) || 
-	     (ad_map_type ==  WB_POSIX_MAP_RFC2307) ) 
+	if ( (ctx->ad_map_type ==  WB_POSIX_MAP_SFU) ||
+	     (ctx->ad_map_type ==  WB_POSIX_MAP_SFU20) ||
+	     (ctx->ad_map_type ==  WB_POSIX_MAP_RFC2307) )
 	{
-		ADS_STATUS schema_status;
-		
-		schema_status = ads_check_posix_schema_mapping( NULL, ads, ad_map_type, &ad_schema);
-		if ( !ADS_ERR_OK(schema_status) ) {
+		status = ads_check_posix_schema_mapping(NULL, ctx->ads, ctx->ad_map_type, &ctx->ad_schema);
+		if ( !ADS_ERR_OK(status) ) {
 			DEBUG(2,("ad_idmap_cached_connection: Failed to obtain schema details!\n"));
-			return NULL;			
 		}
 	}
 	
-	return ads;
+	return status;
 }
 
 /************************************************************************
@@ -190,17 +222,18 @@ static NTSTATUS idmap_ad_initialize(struct idmap_domain *dom,
 		}
 	}
 
+	/* default map type */
+	ctx->ad_map_type = WB_POSIX_MAP_RFC2307;
+
 	/* schema mode */
-	if ( ad_map_type == WB_POSIX_MAP_UNKNOWN )
-		ad_map_type = WB_POSIX_MAP_RFC2307;
 	schema_mode = lp_parm_const_string(-1, config_option, "schema_mode", NULL);
 	if ( schema_mode && schema_mode[0] ) {
 		if ( strequal(schema_mode, "sfu") )
-			ad_map_type = WB_POSIX_MAP_SFU;
+			ctx->ad_map_type = WB_POSIX_MAP_SFU;
 		else if ( strequal(schema_mode, "sfu20" ) )
-			ad_map_type = WB_POSIX_MAP_SFU20;
+			ctx->ad_map_type = WB_POSIX_MAP_SFU20;
 		else if ( strequal(schema_mode, "rfc2307" ) )
-			ad_map_type = WB_POSIX_MAP_RFC2307;
+			ctx->ad_map_type = WB_POSIX_MAP_RFC2307;
 		else
 			DEBUG(0,("idmap_ad_initialize: Unknown schema_mode (%s)\n",
 				 schema_mode));
@@ -256,7 +289,6 @@ static NTSTATUS idmap_ad_unixids_to_sids(struct idmap_domain *dom, struct id_map
 	TALLOC_CTX *memctx;
 	struct idmap_ad_context *ctx;
 	ADS_STATUS rc;
-	ADS_STRUCT *ads;
 	const char *attrs[] = { "sAMAccountType", 
 				"objectSid",
 				NULL, /* uidnumber */
@@ -284,14 +316,16 @@ static NTSTATUS idmap_ad_unixids_to_sids(struct idmap_domain *dom, struct id_map
 		return NT_STATUS_NO_MEMORY;
 	}
 
-	if ( (ads = ad_idmap_cached_connection()) == NULL ) {
-		DEBUG(1, ("ADS uninitialized\n"));
+	rc = ad_idmap_cached_connection(dom);
+	if (!ADS_ERR_OK(rc)) {
+		DEBUG(1, ("ADS uninitialized: %s\n", ads_errstr(rc)));
 		ret = NT_STATUS_UNSUCCESSFUL;
+		/* ret = ads_ntstatus(rc); */
 		goto done;
 	}
 
-	attrs[2] = ad_schema->posix_uidnumber_attr;
-	attrs[3] = ad_schema->posix_gidnumber_attr;
+	attrs[2] = ctx->ad_schema->posix_uidnumber_attr;
+	attrs[3] = ctx->ad_schema->posix_gidnumber_attr;
 
 again:
 	bidx = idx;
@@ -308,7 +342,7 @@ again:
 							   ATYPE_INTERDOMAIN_TRUST);
 			}
 			u_filter = talloc_asprintf_append_buffer(u_filter, "(%s=%lu)",
-							  ad_schema->posix_uidnumber_attr,
+							  ctx->ad_schema->posix_uidnumber_attr,
 							  (unsigned long)ids[idx]->xid.id);
 			CHECK_ALLOC_DONE(u_filter);
 			break;
@@ -322,7 +356,7 @@ again:
 							   ATYPE_SECURITY_LOCAL_GROUP);
 			}
 			g_filter = talloc_asprintf_append_buffer(g_filter, "(%s=%lu)",
-							  ad_schema->posix_gidnumber_attr,
+							  ctx->ad_schema->posix_gidnumber_attr,
 							  (unsigned long)ids[idx]->xid.id);
 			CHECK_ALLOC_DONE(g_filter);
 			break;
@@ -348,14 +382,14 @@ again:
 	filter = talloc_asprintf_append_buffer(filter, ")");
 	CHECK_ALLOC_DONE(filter);
 
-	rc = ads_search_retry(ads, &res, filter, attrs);
+	rc = ads_search_retry(ctx->ads, &res, filter, attrs);
 	if (!ADS_ERR_OK(rc)) {
 		DEBUG(1, ("ERROR: ads search returned: %s\n", ads_errstr(rc)));
 		ret = NT_STATUS_UNSUCCESSFUL;
 		goto done;
 	}
 
-	if ( (count = ads_count_replies(ads, res)) == 0 ) {
+	if ( (count = ads_count_replies(ctx->ads, res)) == 0 ) {
 		DEBUG(10, ("No IDs found\n"));
 	}
 
@@ -368,9 +402,9 @@ again:
 		uint32_t atype;
 
 		if (i == 0) { /* first entry */
-			entry = ads_first_entry(ads, entry);
+			entry = ads_first_entry(ctx->ads, entry);
 		} else { /* following ones */
-			entry = ads_next_entry(ads, entry);
+			entry = ads_next_entry(ctx->ads, entry);
 		}
 
 		if ( !entry ) {
@@ -379,13 +413,13 @@ again:
 		}
 
 		/* first check if the SID is present */
-		if (!ads_pull_sid(ads, entry, "objectSid", &sid)) {
+		if (!ads_pull_sid(ctx->ads, entry, "objectSid", &sid)) {
 			DEBUG(2, ("Could not retrieve SID from entry\n"));
 			continue;
 		}
 
 		/* get type */
-		if (!ads_pull_uint32(ads, entry, "sAMAccountType", &atype)) {
+		if (!ads_pull_uint32(ctx->ads, entry, "sAMAccountType", &atype)) {
 			DEBUG(1, ("could not get SAM account type\n"));
 			continue;
 		}
@@ -405,9 +439,9 @@ again:
 			continue;
 		}
 
-		if (!ads_pull_uint32(ads, entry, (type==ID_TYPE_UID) ? 
-				                 ad_schema->posix_uidnumber_attr : 
-				                 ad_schema->posix_gidnumber_attr, 
+		if (!ads_pull_uint32(ctx->ads, entry, (type==ID_TYPE_UID) ?
+				                 ctx->ad_schema->posix_uidnumber_attr :
+				                 ctx->ad_schema->posix_gidnumber_attr,
 				     &id)) 
 		{
 			DEBUG(1, ("Could not get unix ID\n"));
@@ -439,7 +473,7 @@ again:
 	}
 
 	if (res) {
-		ads_msgfree(ads, res);
+		ads_msgfree(ctx->ads, res);
 	}
 
 	if (ids[idx]) { /* still some values to map */
@@ -468,7 +502,6 @@ static NTSTATUS idmap_ad_sids_to_unixids(struct idmap_domain *dom, struct id_map
 	TALLOC_CTX *memctx;
 	struct idmap_ad_context *ctx;
 	ADS_STATUS rc;
-	ADS_STRUCT *ads;
 	const char *attrs[] = { "sAMAccountType", 
 				"objectSid",
 				NULL, /* attr_uidnumber */
@@ -495,14 +528,22 @@ static NTSTATUS idmap_ad_sids_to_unixids(struct idmap_domain *dom, struct id_map
 		return NT_STATUS_NO_MEMORY;
 	}
 
-	if ( (ads = ad_idmap_cached_connection()) == NULL ) {
-		DEBUG(1, ("ADS uninitialized\n"));
+	rc = ad_idmap_cached_connection(dom);
+	if (!ADS_ERR_OK(rc)) {
+		DEBUG(1, ("ADS uninitialized: %s\n", ads_errstr(rc)));
+		ret = NT_STATUS_UNSUCCESSFUL;
+		/* ret = ads_ntstatus(rc); */
+		goto done;
+	}
+
+	if (ctx->ad_schema == NULL) {
+		DEBUG(0, ("haven't got ctx->ad_schema ! \n"));
 		ret = NT_STATUS_UNSUCCESSFUL;
 		goto done;
 	}
 
-	attrs[2] = ad_schema->posix_uidnumber_attr;
-	attrs[3] = ad_schema->posix_gidnumber_attr;
+	attrs[2] = ctx->ad_schema->posix_uidnumber_attr;
+	attrs[3] = ctx->ad_schema->posix_gidnumber_attr;
 
 again:
 	filter = talloc_asprintf(memctx, "(&(|"
@@ -527,14 +568,14 @@ again:
 	CHECK_ALLOC_DONE(filter);
 	DEBUG(10, ("Filter: [%s]\n", filter));
 
-	rc = ads_search_retry(ads, &res, filter, attrs);
+	rc = ads_search_retry(ctx->ads, &res, filter, attrs);
 	if (!ADS_ERR_OK(rc)) {
 		DEBUG(1, ("ERROR: ads search returned: %s\n", ads_errstr(rc)));
 		ret = NT_STATUS_UNSUCCESSFUL;
 		goto done;
 	}
 
-	if ( (count = ads_count_replies(ads, res)) == 0 ) {
+	if ( (count = ads_count_replies(ctx->ads, res)) == 0 ) {
 		DEBUG(10, ("No IDs found\n"));
 	}
 
@@ -547,9 +588,9 @@ again:
 		uint32_t atype;
 
 		if (i == 0) { /* first entry */
-			entry = ads_first_entry(ads, entry);
+			entry = ads_first_entry(ctx->ads, entry);
 		} else { /* following ones */
-			entry = ads_next_entry(ads, entry);
+			entry = ads_next_entry(ctx->ads, entry);
 		}
 
 		if ( !entry ) {
@@ -558,7 +599,7 @@ again:
 		}
 
 		/* first check if the SID is present */
-		if (!ads_pull_sid(ads, entry, "objectSid", &sid)) {
+		if (!ads_pull_sid(ctx->ads, entry, "objectSid", &sid)) {
 			DEBUG(2, ("Could not retrieve SID from entry\n"));
 			continue;
 		}
@@ -570,7 +611,7 @@ again:
 		}
 
 		/* get type */
-		if (!ads_pull_uint32(ads, entry, "sAMAccountType", &atype)) {
+		if (!ads_pull_uint32(ctx->ads, entry, "sAMAccountType", &atype)) {
 			DEBUG(1, ("could not get SAM account type\n"));
 			continue;
 		}
@@ -590,9 +631,9 @@ again:
 			continue;
 		}
 
-		if (!ads_pull_uint32(ads, entry, (type==ID_TYPE_UID) ? 
-				                 ad_schema->posix_uidnumber_attr : 
-				                 ad_schema->posix_gidnumber_attr, 
+		if (!ads_pull_uint32(ctx->ads, entry, (type==ID_TYPE_UID) ?
+				                 ctx->ad_schema->posix_uidnumber_attr :
+				                 ctx->ad_schema->posix_gidnumber_attr,
 				     &id)) 
 		{
 			DEBUG(1, ("Could not get unix ID\n"));
@@ -617,7 +658,7 @@ again:
 	}
 
 	if (res) {
-		ads_msgfree(ads, res);
+		ads_msgfree(ctx->ads, res);
 	}
 
 	if (ids[idx]) { /* still some values to map */
@@ -642,16 +683,18 @@ done:
 
 static NTSTATUS idmap_ad_close(struct idmap_domain *dom)
 {
-	ADS_STRUCT *ads = ad_idmap_ads;
+	struct idmap_ad_context * ctx;
 
-	if (ads != NULL) {
+	ctx = talloc_get_type(dom->private_data, struct idmap_ad_context);
+
+	if (ctx->ads != NULL) {
 		/* we own this ADS_STRUCT so make sure it goes away */
-		ads->is_mine = True;
-		ads_destroy( &ads );
-		ad_idmap_ads = NULL;
+		ctx->ads->is_mine = True;
+		ads_destroy( &ctx->ads );
+		ctx->ads = NULL;
 	}
 
-	TALLOC_FREE( ad_schema );
+	TALLOC_FREE( ctx->ad_schema );
 	
 	return NT_STATUS_OK;
 }
@@ -692,22 +735,53 @@ static const char *ad_map_type_string(enum wb_posix_mapping map_type)
 static NTSTATUS nss_ad_generic_init(struct nss_domain_entry *e,
 				    enum wb_posix_mapping new_ad_map_type)
 {
-	/* Sanity check if we have previously been called with a
-	   different schema model */
+	struct idmap_domain *dom;
+	struct idmap_ad_context *ctx;
 
-	if ( (ad_map_type != WB_POSIX_MAP_UNKNOWN) &&
-	     (ad_map_type != new_ad_map_type))
-	{
-		DEBUG(0,("nss_ad_generic_init: "
-			 "Cannot set Posix map type to %s. "
-			 "Map type has already been set to %s."
-			 "Mixed schema models not supported!\n",
-			 ad_map_type_string(new_ad_map_type),
-			 ad_map_type_string(ad_map_type)));
-		return NT_STATUS_NOT_SUPPORTED;
+	if (e->state != NULL) {
+		dom = talloc_get_type(e->state, struct idmap_domain);
+	} else {
+		dom = TALLOC_ZERO_P(e, struct idmap_domain);
+		if (dom == NULL) {
+			DEBUG(0, ("Out of memory!\n"));
+			return NT_STATUS_NO_MEMORY;
+		}
+		e->state = dom;
 	}
 
-	ad_map_type = new_ad_map_type;
+	if (e->domain != NULL) {
+		dom->name = talloc_strdup(dom, e->domain);
+		if (dom->name == NULL) {
+			DEBUG(0, ("Out of memory!\n"));
+			return NT_STATUS_NO_MEMORY;
+		}
+	}
+
+	if (dom->private_data != NULL) {
+		ctx = talloc_get_type(dom->private_data,
+				      struct idmap_ad_context);
+	} else {
+		ctx = TALLOC_ZERO_P(dom, struct idmap_ad_context);
+		if (ctx == NULL) {
+			DEBUG(0, ("Out of memory!\n"));
+			return NT_STATUS_NO_MEMORY;
+		}
+		ctx->ad_map_type = WB_POSIX_MAP_RFC2307;
+		dom->private_data = ctx;
+	}
+
+	if ((ctx->ad_map_type != WB_POSIX_MAP_UNKNOWN) &&
+	    (ctx->ad_map_type != new_ad_map_type))
+	{
+		DEBUG(2, ("nss_ad_generic_init: "
+			  "Warning: overriding previously set posix map type "
+			  "%s for domain %s with map type %s.\n",
+			  ad_map_type_string(ctx->ad_map_type),
+			  dom->name,
+			  ad_map_type_string(new_ad_map_type)));
+	}
+
+	ctx->ad_map_type = new_ad_map_type;
 
 	return NT_STATUS_OK;
 }
@@ -730,6 +804,7 @@ static NTSTATUS nss_rfc2307_init( struct nss_domain_entry *e )
 
 /************************************************************************
  ***********************************************************************/
+
 static NTSTATUS nss_ad_get_info( struct nss_domain_entry *e, 
 				  const DOM_SID *sid, 
 				  TALLOC_CTX *mem_ctx,
@@ -740,7 +815,6 @@ static NTSTATUS nss_ad_get_info( struct nss_domain_entry *e,
 				  char **gecos,
 				  uint32 *gid )
 {
-	ADS_STRUCT *ads_internal = NULL;
 	const char *attrs[] = {NULL, /* attr_homedir */
 			       NULL, /* attr_shell */
 			       NULL, /* attr_gecos */
@@ -751,18 +825,24 @@ static NTSTATUS nss_ad_get_info( struct nss_domain_entry *e,
 	ADS_STATUS ads_status = ADS_ERROR_NT(NT_STATUS_UNSUCCESSFUL);
 	NTSTATUS nt_status = NT_STATUS_UNSUCCESSFUL;
 	char *sidstr = NULL;
+	struct idmap_domain *dom;
+	struct idmap_ad_context *ctx;
 
 	/* Only do query if we are online */
 	if (idmap_is_offline())	{
 		return NT_STATUS_FILE_IS_OFFLINE;
 	}
 
-	/* We are assuming that the internal ADS_STRUCT is for the 
-	   same forest as the incoming *ads pointer */
+	dom = talloc_get_type(e->state, struct idmap_domain);
+	ctx = talloc_get_type(dom->private_data, struct idmap_ad_context);
 
-	ads_internal = ad_idmap_cached_connection();
+	ads_status = ad_idmap_cached_connection(dom);
+	if (!ADS_ERR_OK(ads_status)) {
+		return NT_STATUS_OBJECT_NAME_NOT_FOUND;
+	}
 
-	if ( !ads_internal || !ad_schema ) {
+	if (!ctx->ad_schema) {
+		DEBUG(10, ("nss_ad_get_info: no ad_schema configured!\n"));
 		return NT_STATUS_OBJECT_NAME_NOT_FOUND;
 	}
 
@@ -773,12 +853,15 @@ static NTSTATUS nss_ad_get_info( struct nss_domain_entry *e,
 	/* See if we can use the ADS connection struct swe were given */
 
 	if (ads) {
-		*homedir = ads_pull_string( ads, mem_ctx, msg, ad_schema->posix_homedir_attr );
-		*shell   = ads_pull_string( ads, mem_ctx, msg, ad_schema->posix_shell_attr );
-		*gecos   = ads_pull_string( ads, mem_ctx, msg, ad_schema->posix_gecos_attr );
+		DEBUG(10, ("nss_ad_get_info: using given ads connection and "
+			   "LDAP message (%p)\n", msg));
+
+		*homedir = ads_pull_string( ads, mem_ctx, msg, ctx->ad_schema->posix_homedir_attr );
+		*shell   = ads_pull_string( ads, mem_ctx, msg, ctx->ad_schema->posix_shell_attr );
+		*gecos   = ads_pull_string( ads, mem_ctx, msg, ctx->ad_schema->posix_gecos_attr );
 
 		if (gid) {
-			if ( !ads_pull_uint32(ads, msg, ad_schema->posix_gidnumber_attr, gid ) )
+			if ( !ads_pull_uint32(ads, msg, ctx->ad_schema->posix_gidnumber_attr, gid ) )
 				*gid = (uint32)-1;
 		}
 
@@ -788,10 +871,13 @@ static NTSTATUS nss_ad_get_info( struct nss_domain_entry *e,
 
 	/* Have to do our own query */
 
-	attrs[0] = ad_schema->posix_homedir_attr;
-	attrs[1] = ad_schema->posix_shell_attr;
-	attrs[2] = ad_schema->posix_gecos_attr;
-	attrs[3] = ad_schema->posix_gidnumber_attr;
+	DEBUG(10, ("nss_ad_get_info: no ads connection given, doing our "
+		   "own query\n"));
+
+	attrs[0] = ctx->ad_schema->posix_homedir_attr;
+	attrs[1] = ctx->ad_schema->posix_shell_attr;
+	attrs[2] = ctx->ad_schema->posix_gecos_attr;
+	attrs[3] = ctx->ad_schema->posix_gidnumber_attr;
 
 	sidstr = sid_binstring(sid);
 	filter = talloc_asprintf(mem_ctx, "(objectSid=%s)", sidstr);
@@ -802,18 +888,18 @@ static NTSTATUS nss_ad_get_info( struct nss_domain_entry *e,
 		goto done;
 	}
 
-	ads_status = ads_search_retry(ads_internal, &msg_internal, filter, attrs);
+	ads_status = ads_search_retry(ctx->ads, &msg_internal, filter, attrs);
 	if (!ADS_ERR_OK(ads_status)) {
 		nt_status = ads_ntstatus(ads_status);
 		goto done;
 	}
 
-	*homedir = ads_pull_string(ads_internal, mem_ctx, msg_internal, ad_schema->posix_homedir_attr);
-	*shell   = ads_pull_string(ads_internal, mem_ctx, msg_internal, ad_schema->posix_shell_attr);
-	*gecos   = ads_pull_string(ads_internal, mem_ctx, msg_internal, ad_schema->posix_gecos_attr);
+	*homedir = ads_pull_string(ctx->ads, mem_ctx, msg_internal, ctx->ad_schema->posix_homedir_attr);
+	*shell   = ads_pull_string(ctx->ads, mem_ctx, msg_internal, ctx->ad_schema->posix_shell_attr);
+	*gecos   = ads_pull_string(ctx->ads, mem_ctx, msg_internal, ctx->ad_schema->posix_gecos_attr);
 
 	if (gid) {
-		if (!ads_pull_uint32(ads_internal, msg_internal, ad_schema->posix_gidnumber_attr, gid))
+		if (!ads_pull_uint32(ctx->ads, msg_internal, ctx->ad_schema->posix_gidnumber_attr, gid))
 			*gid = (uint32)-1;
 	}
 
@@ -821,7 +907,7 @@ static NTSTATUS nss_ad_get_info( struct nss_domain_entry *e,
 
 done:
 	if (msg_internal) {
-		ads_msgfree(ads_internal, msg_internal);
+		ads_msgfree(ctx->ads, msg_internal);
 	}
 
 	return nt_status;
