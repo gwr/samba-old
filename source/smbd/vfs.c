@@ -859,6 +859,15 @@ NTSTATUS check_reduced_name(connection_struct *conn, const char *fname)
 
 	DEBUG(3,("reduce_name [%s] [%s]\n", fname, conn->connectpath));
 
+	/*
+	 * Watch out to not actually use the path returned by REALPATH
+	 * for anything except the in-share check. The reason is that
+	 * the shadow_copy2 module lies about REALNAME for the
+	 * shadow-copy style paths. If you want to use "resolved_name"
+	 * for statcache-like things, you need to modify the
+	 * shadow_copy2 module along with this routine.
+	 */
+
 #ifdef REALPATH_TAKES_NULL
 	resolved_name = SMB_VFS_REALPATH(conn,fname,NULL);
 #else

@@ -413,7 +413,27 @@ static int shadow_copy2_mknod(vfs_handle_struct *handle,
 static char *shadow_copy2_realpath(vfs_handle_struct *handle,
 			    const char *fname, char *resolved_path)
 {
-        SHADOW2_NEXT(REALPATH, (handle, name, resolved_path), char *, NULL);
+	/*
+	 * This one here is a bit subtle. SMB_VFS_REALPATH is used in
+	 * smbd in two places: To canonicalize the connection path at
+	 * tree connect time, and in the check for wide links.
+	 *
+	 * When the shadow_copy2 module is active it might happen that
+	 * the base directory for the snapshots lies outside the share
+	 * path, so the test for wide links fails.
+	 *
+	 * For this reason, in case we hit a shadow copy name, the
+	 * SMB_VFS_REALPATH lies: We just ignore the @GMT- prefix for
+	 * the realpath calculation, pretending the path is indeed
+	 * inside the share path.
+	 *
+	 * For the tree connect use of REALPATH this will never match
+	 * as here all paths start with "/", not with "@"
+	 */
+	if (shadow_copy2_match_name(fname)) {
+		fname += GMT_NAME_LEN+1;
+	}
+	return SMB_VFS_NEXT_REALPATH(handle, fname, resolved_path);
 }
 
 static NTSTATUS shadow_copy2_get_nt_acl(vfs_handle_struct *handle,
