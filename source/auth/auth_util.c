@@ -701,6 +701,8 @@ NTSTATUS create_local_token(auth_serversupplied_info *server_info)
 	NTSTATUS status;
 	size_t i;
 	
+	struct dom_sid *filter_sids;
+	size_t num_filter_sids;
 
 	mem_ctx = talloc_new(NULL);
 	if (mem_ctx == NULL) {
@@ -744,11 +746,37 @@ NTSTATUS create_local_token(auth_serversupplied_info *server_info)
 	server_info->n_groups = 0;
 	server_info->groups = NULL;
 
+	if (!secrets_groupfilter_fetch(mem_ctx, &filter_sids,
+				       &num_filter_sids)) {
+		num_filter_sids = 0;
+	}
+
 	/* Start at index 1, where the groups start. */
 
 	for (i=1; i<server_info->ptok->num_sids; i++) {
 		gid_t gid;
 		DOM_SID *sid = &server_info->ptok->user_sids[i];
+		size_t sidindex;
+
+		/*
+		 * For secondary groups, potentially apply a group
+		 * filter for hosts with a silly groups-per-user limit
+		 * such as for example Solaris
+		 */
+
+		if ((i > 1) && (num_filter_sids != 0)) {
+			/*
+			 * We have a SID filter in secrets.tdb, only
+			 * convert the SIDs in that filter to GIDs.
+			 */
+			if (bsearch(sid, filter_sids, num_filter_sids,
+				    sizeof(struct dom_sid),
+				    sid_compare_sort) == NULL) {
+				DEBUG(10, ("Filtering out SID %s\n",
+					   sid_string_dbg(sid)));
+				continue;
+			}
+		}
 
 		if (!sid_to_gid(sid, &gid)) {
 			DEBUG(10, ("Could not convert SID %s to gid, "
@@ -760,6 +788,9 @@ NTSTATUS create_local_token(auth_serversupplied_info *server_info)
 	}
 	
 	debug_nt_user_token(DBGC_AUTH, 10, server_info->ptok);
+	debug_unix_user_token(DBGC_AUTH, 10, server_info->uid,
+			      server_info->gid, server_info->n_groups,
+			      server_info->groups);
 
 	status = log_nt_token(mem_ctx, server_info->ptok);
 

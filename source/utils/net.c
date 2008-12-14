@@ -937,6 +937,135 @@ static int net_maxrid(int argc, const char **argv)
 	return 0;
 }
 
+static int net_groupfilter_addsid(int argc, const char **argv)
+{
+	struct dom_sid sid;
+	struct dom_sid *sids;
+	size_t num_sids;
+
+	if (argc != 1) {
+		d_fprintf(stderr, "usage: net groupfilter addsid <SID>\n");
+		return -1;
+	}
+
+	if (!string_to_sid(&sid, argv[0])) {
+		d_fprintf(stderr, "Could not convert '%s' to SID\n", argv[0]);
+		return -1;
+	}
+
+	if (!secrets_groupfilter_fetch(talloc_tos(), &sids, &num_sids)) {
+		d_fprintf(stderr, "Could not fetch sid list\n");
+		return -1;
+	}
+
+	if (!NT_STATUS_IS_OK(add_sid_to_array_unique(talloc_tos(), &sid,
+						     &sids, &num_sids))) {
+		d_fprintf(stderr, "add_sid_to_array_unique failed\n");
+		TALLOC_FREE(sids);
+		return -1;
+	}
+
+	qsort(sids, num_sids, sizeof(struct dom_sid), sid_compare_sort);
+
+	if (!secrets_store(SECRETS_GROUPFILTER_KEY, sids,
+			   num_sids * sizeof(struct dom_sid))) {
+		d_fprintf(stderr, "secrets_store failed\n");
+		TALLOC_FREE(sids);
+		return -1;
+	}
+
+	TALLOC_FREE(sids);
+
+	return 0;
+}
+
+static int net_groupfilter_delsid(int argc, const char **argv)
+{
+	struct dom_sid sid;
+	struct dom_sid *sids;
+	size_t num_sids;
+	bool res;
+
+	if (argc != 1) {
+		d_fprintf(stderr, "usage: net groupfilter delsid <SID>\n");
+		return -1;
+	}
+
+	if (!string_to_sid(&sid, argv[0])) {
+		d_fprintf(stderr, "Could not convert '%s' to SID\n", argv[0]);
+		return -1;
+	}
+
+	if (!secrets_groupfilter_fetch(talloc_tos(), &sids, &num_sids)) {
+		d_fprintf(stderr, "Could not fetch sid list\n");
+		return -1;
+	}
+
+	del_sid_from_array(&sid, &sids, &num_sids);
+
+	if (num_sids == 0) {
+		res = secrets_delete(SECRETS_GROUPFILTER_KEY);
+	} else {
+		res = secrets_store(SECRETS_GROUPFILTER_KEY, sids,
+				    num_sids * sizeof(struct dom_sid));
+	}
+
+	if (!res) {
+		d_fprintf(stderr, "secrets_store failed\n");
+		TALLOC_FREE(sids);
+		return -1;
+	}
+
+	TALLOC_FREE(sids);
+
+	return 0;
+}
+
+static int net_groupfilter_list(int argc, const char **argv)
+{
+	struct dom_sid *sids;
+	size_t num_sids;
+	int i;
+
+	if (!secrets_groupfilter_fetch(talloc_tos(), &sids, &num_sids)) {
+		d_fprintf(stderr, "Could not fetch sid list\n");
+		return -1;
+	}
+
+	for (i=0; i<num_sids; i++) {
+		d_printf("%s\n", sid_string_tos(&sids[i]));
+	}
+
+	TALLOC_FREE(sids);
+
+	return 0;
+}
+
+static int net_groupfilter(int argc, const char **argv)
+{
+	int ret = -1;
+	struct functable2 func[] = {
+		{
+			"addsid",
+			net_groupfilter_addsid,
+			"Add a SID to the groupfilter"
+		},
+		{
+			"delsid",
+			net_groupfilter_delsid,
+			"Delete a SID from the groupfilter"
+		},
+		{
+			"list",
+			net_groupfilter_list,
+			"List groupfilter SIDs"
+		},
+		{ NULL, NULL, NULL }
+	};
+
+	return net_run_function2(argc, argv, "net groupfilter", func);
+}
+
 /****************************************************************************
 ****************************************************************************/
 
@@ -1004,6 +1133,7 @@ static struct functable net_func[] = {
 	{"USERSIDLIST", net_usersidlist},
 	{"CONF", net_conf},
 	{"REGISTRY", net_registry},
+	{"GROUPFILTER", net_groupfilter},
 #ifdef WITH_FAKE_KASERVER
 	{"AFS", net_afs},
 #endif

@@ -467,6 +467,35 @@ int sid_compare(const DOM_SID *sid1, const DOM_SID *sid2)
 	return sid_compare_auth(sid1, sid2);
 }
 
+int sid_compare_sort(const void *p1, const void *p2)
+{
+	const struct dom_sid *sid1 = (const struct dom_sid *)p1;
+	const struct dom_sid *sid2 = (const struct dom_sid *)p2;
+	int i, res;
+
+	if (sid1->sid_rev_num != sid2->sid_rev_num) {
+		return sid1->sid_rev_num - sid2->sid_rev_num;
+	}
+
+	for (i = 0; i < 6; i++) {
+		if (sid1->id_auth[i] != sid2->id_auth[i]) {
+			return sid1->id_auth[i] - sid2->id_auth[i];
+		}
+	}
+
+	if (sid1->num_auths != sid2->num_auths) {
+		return sid1->num_auths - sid2->num_auths;
+	}
+
+	for (i = 0; i<sid1->num_auths; i++) {
+		if (sid1->sub_auths[i] != sid2->sub_auths[i]) {
+			return sid1->sub_auths[i] - sid2->sub_auths[i];
+		}
+	}
+
+	return 0;
+}
+
 /*****************************************************************
  See if 2 SIDs are in the same domain
  this just compares the leading sub-auths

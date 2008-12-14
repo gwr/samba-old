@@ -51,6 +51,8 @@
 #define SECRETS_AUTH_DOMAIN      "SECRETS/AUTH_DOMAIN"
 #define SECRETS_AUTH_PASSWORD  "SECRETS/AUTH_PASSWORD"
 
+#define SECRETS_GROUPFILTER_KEY "SECRETS/GROUPFILTER"
+
 /* structure for storing machine account password
    (ie. when samba server is member of a domain */
 struct machine_acct_pass {

@@ -1363,3 +1363,36 @@ char *secrets_fetch_generic(const char *owner, const char *key)
 	return secret;
 }
 
+bool secrets_groupfilter_fetch(TALLOC_CTX *mem_ctx, struct dom_sid **psids,
+			       size_t *pnum_sids)
+{
+	void *buf;
+	size_t buflen;
+	struct dom_sid *sids;
+	size_t num_sids;
+
+	buf = secrets_fetch(SECRETS_GROUPFILTER_KEY, &buflen);
+
+	if (buf == NULL) {
+		*psids = NULL;
+		*pnum_sids = 0;
+		return true;
+	}
+
+	if ((buflen % sizeof(struct dom_sid)) != 0) {
+		d_fprintf(stderr, "Invalid array size in secrets.tdb\n");
+	}
+
+	num_sids = buflen / sizeof(struct dom_sid);
+	sids = TALLOC_MEMDUP(
+			talloc_tos(), buf, num_sids * sizeof(struct dom_sid));
+	SAFE_FREE(buf);
+	if (sids == NULL) {
+		d_fprintf(stderr, "Could not allocate SIDs\n");
+		return false;
+	}
+
+	*psids = sids;
+	*pnum_sids = num_sids;
+	return true;
+}
