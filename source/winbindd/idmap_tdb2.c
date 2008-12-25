@@ -187,7 +187,7 @@ static NTSTATUS idmap_tdb2_allocate_id(struct unixid *xid)
 	uint32_t hwm;
 	int res;
 	NTSTATUS status;
-	
+
 	status = idmap_tdb2_open_db();
 	NT_STATUS_NOT_OK_RETURN(status);
 
@@ -268,7 +268,7 @@ static NTSTATUS idmap_tdb2_get_hwm(struct unixid *xid)
 	uint32_t hwm;
 	uint32_t high_hwm;
 	NTSTATUS status;
-	
+
 	status = idmap_tdb2_open_db();
 	NT_STATUS_NOT_OK_RETURN(status);
 
