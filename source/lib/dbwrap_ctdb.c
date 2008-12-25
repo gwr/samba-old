@@ -441,9 +441,9 @@ static struct db_record *db_ctdb_fetch_locked_persistent(struct db_ctdb_ctx *ctx
 	/* destroy this transaction when we release the lock */
 	recp = talloc(rec, struct db_record *);
 	if (recp == NULL) {
-		ctx->db->transaction_cancel(ctx->db);		
+		ctx->db->transaction_cancel(ctx->db);
 		talloc_free(rec);
-		return NULL;		
+		return NULL;
 	}
 	*recp = rec;
 	talloc_set_destructor(recp, db_ctdb_record_destructor);
