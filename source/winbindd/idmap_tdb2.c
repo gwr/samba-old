@@ -132,9 +132,9 @@ static NTSTATUS idmap_tdb2_alloc_load(void)
 	if (((low_id = dbwrap_fetch_int32(idmap_tdb2,
 					  HWM_USER)) == -1) ||
 	    (low_id < idmap_tdb2_state.low_uid)) {
-		if (dbwrap_store_int32(
-			    idmap_tdb2, HWM_USER,
-			    idmap_tdb2_state.low_uid) == -1) {
+		if (!NT_STATUS_IS_OK(dbwrap_trans_store_int32(
+					     idmap_tdb2, HWM_USER,
+					     idmap_tdb2_state.low_uid))) {
 			DEBUG(0, ("Unable to initialise user hwm in idmap "
 				  "database\n"));
 			return NT_STATUS_INTERNAL_DB_ERROR;
@@ -150,9 +150,9 @@ static NTSTATUS idmap_tdb2_alloc_load(void)
 	if (((low_id = dbwrap_fetch_int32(idmap_tdb2,
 					  HWM_GROUP)) == -1) ||
 	    (low_id < idmap_tdb2_state.low_gid)) {
-		if (dbwrap_store_int32(
-			    idmap_tdb2, HWM_GROUP,
-			    idmap_tdb2_state.low_gid) == -1) {
+		if (!NT_STATUS_IS_OK(dbwrap_trans_store_int32(
+					     idmap_tdb2, HWM_GROUP,
+					     idmap_tdb2_state.low_gid))) {
 			DEBUG(0, ("Unable to initialise group hwm in idmap "
 				  "database\n"));
 			return NT_STATUS_INTERNAL_DB_ERROR;
