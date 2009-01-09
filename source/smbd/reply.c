@@ -3893,6 +3893,10 @@ bool is_valid_writeX_buffer(const uint8_t *inbuf)
 		DEBUG(10,("is_valid_writeX_buffer: IPC$ tid\n"));
 		return false;
 	}
+	if (IS_PRINT(conn)) {
+		DEBUG(10,("is_valid_writeX_buffer: printing tid\n"));
+		return false;
+	}
 	doff = SVAL(inbuf,smb_vwv11);
 
 	numtowrite = SVAL(inbuf,smb_vwv10);
@@ -4633,6 +4637,7 @@ void reply_printopen(struct smb_request *req)
 	connection_struct *conn = req->conn;
 	files_struct *fsp;
 	NTSTATUS status;
+	SMB_STRUCT_STAT sbuf;
 
 	START_PROFILE(SMBsplopen);
 
@@ -4656,7 +4661,7 @@ void reply_printopen(struct smb_request *req)
 	}
 
 	/* Open for exclusive use, write only. */
-	status = print_fsp_open(conn, NULL, fsp);
+	status = print_fsp_open(conn, NULL, fsp, &sbuf);
 
 	if (!NT_STATUS_IS_OK(status)) {
 		file_free(fsp);
@@ -5556,7 +5561,9 @@ NTSTATUS rename_internals_fsp(connection_struct *conn,
 	}
 
 	if(replace_if_exists && dst_exists) {
-		if (is_ntfs_stream_name(newname)) {
+		/* Ensure both or neither are stream names. */
+		if (is_ntfs_stream_name(fsp->fsp_name) !=
+				is_ntfs_stream_name(newname)) {
 			return NT_STATUS_INVALID_PARAMETER;
 		}
 	}

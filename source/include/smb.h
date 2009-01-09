@@ -27,7 +27,7 @@
 #define _SMB_H
 
 /* logged when starting the various Samba daemons */
-#define COPYRIGHT_STARTUP_MESSAGE	"Copyright Andrew Tridgell and the Samba Team 1992-2008"
+#define COPYRIGHT_STARTUP_MESSAGE	"Copyright Andrew Tridgell and the Samba Team 1992-2009"
 
 
 #if defined(LARGE_SMB_OFF_T)
@@ -1580,7 +1580,7 @@ enum printing_types {PRINT_BSD,PRINT_SYSV,PRINT_AIX,PRINT_HPUX,
 enum schema_types {SCHEMA_COMPAT, SCHEMA_AD, SCHEMA_SAMBA};
 
 /* LDAP SSL options */
-enum ldap_ssl_types {LDAP_SSL_ON, LDAP_SSL_OFF, LDAP_SSL_START_TLS};
+enum ldap_ssl_types {LDAP_SSL_OFF, LDAP_SSL_START_TLS};
 
 /* LDAP PASSWD SYNC methods */
 enum ldap_passwd_sync_types {LDAP_PASSWD_SYNC_ON, LDAP_PASSWD_SYNC_OFF, LDAP_PASSWD_SYNC_ONLY};
