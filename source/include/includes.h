@@ -724,6 +724,9 @@ typedef char fstring[FSTRING_LEN];
 #include "async_smb.h"
 
 #include "lib/smbconf/smbconf.h"
+#include "lib/smbconf/smbconf_init.h"
+#include "lib/smbconf/smbconf_reg.h"
+#include "lib/smbconf/smbconf_txt.h"
 
 /* used in net.c */
 struct functable {
