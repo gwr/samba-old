@@ -41,7 +41,7 @@ static int smbd_gpfs_fcntl(int fd, void *arg)
 		if (libgpfs_handle == NULL) {
 			DEBUG(10, ("sys_dlopen for libgpfs failed: %s\n",
 				   strerror(errno)));
-			return;
+			return -1;
 		}
 
 		gpfs_fcntl_fn = sys_dlsym(libgpfs_handle, "gpfs_fcntl");
