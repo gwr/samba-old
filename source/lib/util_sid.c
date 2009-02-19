@@ -471,7 +471,7 @@ int sid_compare_sort(const void *p1, const void *p2)
 {
 	const struct dom_sid *sid1 = (const struct dom_sid *)p1;
 	const struct dom_sid *sid2 = (const struct dom_sid *)p2;
-	int i, res;
+	int i;
 
 	if (sid1->sid_rev_num != sid2->sid_rev_num) {
 		return sid1->sid_rev_num - sid2->sid_rev_num;
