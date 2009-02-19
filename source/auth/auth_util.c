@@ -756,7 +756,6 @@ NTSTATUS create_local_token(auth_serversupplied_info *server_info)
 	for (i=1; i<server_info->ptok->num_sids; i++) {
 		gid_t gid;
 		DOM_SID *sid = &server_info->ptok->user_sids[i];
-		size_t sidindex;
 
 		/*
 		 * For secondary groups, potentially apply a group
