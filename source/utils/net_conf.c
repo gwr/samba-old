@@ -314,6 +314,12 @@ static int net_conf_import(struct smbconf_ctx *conf_ctx,
 			 "would import the following configuration:\n\n");
 	}
 
+	werr = smbconf_transaction_start(conf_ctx);
+	if (!W_ERROR_IS_OK(werr)) {
+		d_printf("error starting transaction: %s\n", dos_errstr(werr));
+		goto done;
+	}
+
 	if (servicename != NULL) {
 		struct smbconf_service *service = NULL;
 
@@ -321,11 +327,11 @@ static int net_conf_import(struct smbconf_ctx *conf_ctx,
 					 servicename,
 					 &service);
 		if (!W_ERROR_IS_OK(werr)) {
-			goto done;
+			goto cancel;
 		}
 		werr = import_process_service(conf_ctx, service);
 		if (!W_ERROR_IS_OK(werr)) {
-			goto done;
+			goto cancel;
 		}
 	} else {
 		struct smbconf_service **services = NULL;
@@ -335,23 +341,38 @@ static int net_conf_import(struct smbconf_ctx *conf_ctx,
 					  &num_shares,
 					  &services);
 		if (!W_ERROR_IS_OK(werr)) {
-			goto done;
+			goto cancel;
 		}
 		if (!opt_testmode) {
 			werr = smbconf_drop(conf_ctx);
 			if (!W_ERROR_IS_OK(werr)) {
-				goto done;
+				goto cancel;
 			}
 		}
 		for (sidx = 0; sidx < num_shares; sidx++) {
 			werr = import_process_service(conf_ctx, services[sidx]);
 			if (!W_ERROR_IS_OK(werr)) {
-				goto done;
+				goto cancel;
 			}
 		}
 	}
 
-	ret = 0;
+	werr = smbconf_transaction_commit(conf_ctx);
+	if (!W_ERROR_IS_OK(werr)) {
+		d_printf("error committing transaction: %s\n",
+			 dos_errstr(werr));
+	} else {
+		ret = 0;
+	}
+
+	goto done;
+
+cancel:
+	werr = smbconf_transaction_cancel(conf_ctx);
+	if (!W_ERROR_IS_OK(werr)) {
+		d_printf("error cancelling transaction: %s\n",
+			 dos_errstr(werr));
+	}
 
 done:
 	TALLOC_FREE(mem_ctx);
