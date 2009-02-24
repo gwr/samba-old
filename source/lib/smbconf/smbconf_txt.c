@@ -611,6 +611,20 @@ static WERROR smbconf_txt_delete_includes(struct smbconf_ctx *ctx,
 	return WERR_NOT_SUPPORTED;
 }
 
+static WERROR smbconf_txt_transaction_start(struct smbconf_ctx *ctx)
+{
+	return WERR_OK;
+}
+
+static WERROR smbconf_txt_transaction_commit(struct smbconf_ctx *ctx)
+{
+	return WERR_OK;
+}
+
+static WERROR smbconf_txt_transaction_cancel(struct smbconf_ctx *ctx)
+{
+	return WERR_OK;
+}
 
 static struct smbconf_ops smbconf_ops_txt = {
 	.init			= smbconf_txt_init,
@@ -632,6 +646,9 @@ static struct smbconf_ops smbconf_ops_txt = {
 	.get_includes		= smbconf_txt_get_includes,
 	.set_includes		= smbconf_txt_set_includes,
 	.delete_includes	= smbconf_txt_delete_includes,
+	.transaction_start	= smbconf_txt_transaction_start,
+	.transaction_commit	= smbconf_txt_transaction_commit,
+	.transaction_cancel	= smbconf_txt_transaction_cancel,
 };
 
 
