@@ -900,8 +900,8 @@ static bool tdbsam_convert_backup(const char *dbname, struct db_context **pp_db)
 
 	/* re-open the converted TDB */
 
-	orig_db = db_open_trans(NULL, dbname, 0,
-				TDB_DEFAULT, O_CREAT|O_RDWR, 0600);
+	orig_db = db_open(NULL, dbname, 0,
+			  TDB_DEFAULT, O_CREAT|O_RDWR, 0600);
 	if (orig_db == NULL) {
 		DEBUG(0, ("tdbsam_convert_backup: Failed to re-open "
 			  "converted passdb TDB [%s]\n", dbname));
