@@ -104,6 +104,10 @@ void process_kernel_oplocks(struct messaging_context *msg_ctx, fd_set *pfds)
 
 bool set_file_oplock(files_struct *fsp, int oplock_type)
 {
+        if ((fsp->oplock_type == LEVEL_II_OPLOCK) && koplocks) {
+                return false;
+        }
+
 	if ((fsp->oplock_type != NO_OPLOCK) &&
 	    (fsp->oplock_type != FAKE_LEVEL_II_OPLOCK) &&
 	    koplocks &&
