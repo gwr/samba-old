@@ -435,6 +435,10 @@ void file_free(files_struct *fsp)
 	}
 
 	if (fsp->notify) {
+		if (fsp->is_directory) {
+			notify_remove_onelevel(fsp->conn->notify_ctx,
+					       &fsp->file_id, fsp);
+		}
 		notify_remove(fsp->conn->notify_ctx, fsp);
 		TALLOC_FREE(fsp->notify);
 	}
