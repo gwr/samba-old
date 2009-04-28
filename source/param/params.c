@@ -582,7 +582,7 @@ bool pm_process( const char *FileName,
 	myfile_close(InFile);
 
 	if( !result ) {
-		DEBUG(0,("%s Failed.  Error returned from params.c:parse().\n", func));
+		DEBUG(3,("%s Failed.  Error returned from params.c:parse().\n", func));
 		return False;
 	}
 
