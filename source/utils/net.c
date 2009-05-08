@@ -1043,7 +1043,6 @@ static int net_groupfilter_list(int argc, const char **argv)
 
 static int net_groupfilter(int argc, const char **argv)
 {
-	int ret = -1;
 	struct functable2 func[] = {
 		{
 			"addsid",
