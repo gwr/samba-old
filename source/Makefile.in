@@ -202,7 +202,8 @@ BIN_PROGS = @EXTRA_BIN_PROGS@ \
 EVERYTHING_PROGS = bin/debug2html@EXEEXT@ bin/smbfilter@EXEEXT@ \
 	bin/talloctort@EXEEXT@ bin/replacetort@EXEEXT@ \
 	bin/log2pcap@EXEEXT@ bin/sharesec@EXEEXT@ bin/ndrdump@EXEEXT@ \
-	bin/vlp@EXEEXT@ bin/smbiconv@EXEEXT@
+	bin/vlp@EXEEXT@ bin/smbiconv@EXEEXT@ \
+	bin/dbwrap_tool@EXEEXT@
 
 PAM_MODULES = @PAM_MODULES@
 
@@ -1091,6 +1092,11 @@ VLP_OBJ = $(VLP_OBJ1) $(PARAM_OBJ) $(LIBSMB_OBJ) \
 	  $(READLINE_OBJ) $(POPT_LIB_OBJ) \
 	  $(PASSDB_OBJ) @LIBWBCLIENT_STATIC@ $(SMBLDAP_OBJ) $(GROUPDB_OBJ) $(LDB_OBJ) \
 	  $(DISPLAY_SEC_OBJ)
+
+DBWRAP_TOOL_OBJ = utils/dbwrap_tool.o \
+		  $(PARAM_OBJ) \
+		  $(LIB_NONSMBD_OBJ) \
+		  $(LIBSAMBA_OBJ)
 
 ######################################################################
 # now the rules...
@@ -2428,6 +2434,16 @@ bin/t_stringoverflow@EXEEXT@: $(BINARY_PREREQS) bin/libbigballofmud.@SHLIBEXT@ t
 bin/timelimit@EXEEXT@: script/tests/timelimit.o
 	@echo Linking $@
 	@$(CC) $(FLAGS) -o $@ $(DYNEXP) script/tests/timelimit.o
+
+bin/dbwrap_tool@EXEEXT@: $(DBWRAP_TOOL_OBJ) @LIBTALLOC_SHARED@ @LIBTDB_SHARED@
+	@echo "Linking $@"
+	@$(CC) -o $@ $(DBWRAP_TOOL_OBJ)\
+		$(LDFLAGS) $(DYNEEXP) $(LIBS) \
+		$(LDAP_LIBS) \
+		$(LIBTALLOC_LIBS) $(LIBTDB_LIBS)
+
+install-dbwrap_tool:: bin/dbwrap_tool@EXEEXT@
+	@$(SHELL) script/installbin.sh $(INSTALLPERMS_BIN) $(DESTDIR) $(prefix) $(BINDIR) bin/dbwrap_tool@EXEEXT@
 
 install:: installservers installbin @INSTALL_CIFSMOUNT@ @INSTALL_CIFSUPCALL@ installman \
 		installscripts installdat installmodules @SWAT_INSTALL_TARGETS@ \
