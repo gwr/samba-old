@@ -431,6 +431,10 @@ static char *shadow_copy2_realpath(vfs_handle_struct *handle,
 	 * as here all paths start with "/", not with "@"
 	 */
 	if (shadow_copy2_match_name(fname)) {
+		if (fname[GMT_NAME_LEN] == '\0') {
+			return SMB_VFS_NEXT_REALPATH(handle, ".",
+						     resolved_path);
+		}
 		fname += GMT_NAME_LEN+1;
 	}
 	return SMB_VFS_NEXT_REALPATH(handle, fname, resolved_path);
