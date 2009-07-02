@@ -3200,7 +3200,7 @@ NTSTATUS create_file(connection_struct *conn,
 		}
 
 		if (!(conn->fs_capabilities & FILE_NAMED_STREAMS)) {
-			status = NT_STATUS_OBJECT_PATH_NOT_FOUND;
+			status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 			goto fail;
 		}
 	}
