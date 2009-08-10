@@ -230,6 +230,7 @@ static bool smbacl4_nfs42win(TALLOC_CTX *mem_ctx, SMB4ACL_T *acl, /* in */
 		SEC_ACCESS mask;
 		DOM_SID sid;
 		SMB_ACE4PROP_T	*ace = &aceint->prop;
+		uint32_t mapped_ace_flags;
 
 		DEBUG(10, ("magic: 0x%x, type: %d, iflags: %x, flags: %x, mask: %x, "
 			"who: %d\n", aceint->magic, ace->aceType, ace->flags,
@@ -265,10 +266,24 @@ static bool smbacl4_nfs42win(TALLOC_CTX *mem_ctx, SMB4ACL_T *acl, /* in */
 		if (is_directory && (ace->aceMask & SMB_ACE4_ADD_FILE)) {
 			ace->aceMask |= SMB_ACE4_DELETE_CHILD;
 		}
+
+		mapped_ace_flags = ace->aceFlags & 0xf;
+		if (!is_directory && (mapped_ace_flags & 0x3)) {
+			/*
+			 * GPFS sets inherits dir_inhert and file_inherit flags
+			 * to files, too, which confuses windows, and seems to
+			 * be wrong anyways. ==> Map these bits away for files.
+			 */
+			DEBUG(10, ("removing inherit flags from nfs4 ace\n"));
+			mapped_ace_flags &= ~0x3;
+		}
+		DEBUG(10, ("mapped ace flags: 0x%x => 0x%x\n",
+		      ace->aceFlags, mapped_ace_flags));
+
 		init_sec_access(&mask, ace->aceMask);
 		init_sec_ace(&nt_ace_list[good_aces++], &sid,
 			ace->aceType, mask,
-			ace->aceFlags & 0xf);
+			mapped_ace_flags);
 	}
 
 	*ppnt_ace_list = nt_ace_list;
