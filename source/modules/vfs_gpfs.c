@@ -888,6 +888,18 @@ static int vfs_gpfs_fchmod(vfs_handle_struct *handle, files_struct *fsp, mode_t 
 		 return rc;
 }
 
+static int vfs_gpfs_ftruncate(vfs_handle_struct *handle, files_struct *fsp,
+			      SMB_OFF_T len)
+{
+	int result;
+
+	result = smbd_gpfs_ftrunctate(fsp->fh->fd, len);
+	if ((result == -1) && (errno == ENOSYS)) {
+		return SMB_VFS_NEXT_FTRUNCATE(handle, fsp, len);
+	}
+	return result;
+}
+
 /* VFS operations structure */
 
 static vfs_op_tuple gpfs_op_tuples[] = {
@@ -951,6 +963,10 @@ static vfs_op_tuple gpfs_op_tuples[] = {
         { SMB_VFS_OP(vfs_gpfs_close),
 	  SMB_VFS_OP_CLOSE,
 	  SMB_VFS_LAYER_TRANSPARENT },
+
+        { SMB_VFS_OP(vfs_gpfs_ftruncate),
+          SMB_VFS_OP_FTRUNCATE,
+          SMB_VFS_LAYER_TRANSPARENT },
 
         { SMB_VFS_OP(NULL), SMB_VFS_OP_NOOP, SMB_VFS_LAYER_NOOP }
 

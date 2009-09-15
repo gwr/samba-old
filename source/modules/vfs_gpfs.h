@@ -29,4 +29,5 @@ bool set_gpfs_sharemode(files_struct *fsp, uint32 access_mask,
 int set_gpfs_lease(int fd, int leasetype);
 int smbd_gpfs_getacl(char *pathname, int flags, void *acl);
 int smbd_gpfs_putacl(char *pathname, int flags, void *acl);
+int smbd_gpfs_ftrunctate(int fd, gpfs_off64_t length);
 void init_gpfs(void);

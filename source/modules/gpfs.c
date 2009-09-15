@@ -27,6 +27,7 @@
 static bool gpfs_share_modes;
 static bool gpfs_leases;
 static bool gpfs_getrealfilename;
+static bool gpfs_do_ftruncate;
 
 static int (*gpfs_set_share_fn)(int fd, unsigned int allow, unsigned int deny);
 static int (*gpfs_set_lease_fn)(int fd, unsigned int leaseType);
@@ -34,6 +35,7 @@ static int (*gpfs_getacl_fn)(char *pathname, int flags, void *acl);
 static int (*gpfs_putacl_fn)(char *pathname, int flags, void *acl);
 static int (*gpfs_get_realfilename_path_fn)(char *pathname, char *filenamep,
 					    int *buflen);
+static int (*gpfs_ftruncate_fn)(int fd, gpfs_off64_t length);
 
 
 bool set_gpfs_sharemode(files_struct *fsp, uint32 access_mask,
@@ -137,6 +139,16 @@ int smbd_gpfs_putacl(char *pathname, int flags, void *acl)
 	return gpfs_putacl_fn(pathname, flags, acl);
 }
 
+int smbd_gpfs_ftrunctate(int fd, gpfs_off64_t length)
+{
+	if (!gpfs_do_ftruncate || (gpfs_ftruncate_fn == NULL)) {
+		errno = ENOSYS;
+		return -1;
+	}
+
+	return gpfs_ftruncate_fn(fd, length);
+}
+
 int smbd_gpfs_get_realfilename_path(char *pathname, char *filenamep,
 				    int *buflen)
 {
@@ -207,11 +219,13 @@ void init_gpfs(void)
 	init_gpfs_function(&gpfs_putacl_fn, "gpfs_putacl");
 	init_gpfs_function(&gpfs_get_realfilename_path_fn,
 			   "gpfs_get_realfilename_path");
+        init_gpfs_function(&gpfs_ftruncate_fn,"gpfs_ftruncate");
 
 	gpfs_share_modes = lp_parm_bool(-1, "gpfs", "sharemodes", True);
 	gpfs_leases      = lp_parm_bool(-1, "gpfs", "leases", True);
 	gpfs_getrealfilename = lp_parm_bool(-1, "gpfs", "getrealfilename",
 					    True);
+	gpfs_do_ftruncate = lp_parm_bool(-1, "gpfs", "ftruncate", True);
 
 	return;
 }
