@@ -24,9 +24,16 @@ unset TMPDIR
 # Source networking configuration.
 . /etc/sysconfig/network
 
+# Don't start NMBD by default.
+# This can be overridden in /etc/sysconfig/samba .
+START_NMBD="no"
+
 if [ -f /etc/sysconfig/samba ]; then
    . /etc/sysconfig/samba
 fi
+
+# be friendly - convert the value to lower case
+START_NMBD=$(echo $START_NMBD | tr A-Z a-z)
 
 # Check that networking is up.
 [ ${NETWORKING} = "no" ] && exit 0
@@ -36,14 +43,6 @@ fi
 
 # Check that we can write to it... so non-root users stop here
 [ -w /etc/samba/smb.conf ] || exit 0
-
-# Check whether "netbios disabled" is true
-#ISNETBIOSDISABLED=$(testparm -s 2>/dev/null | \
-#	sed -n '/\[global\]/,/^$/p' | \
-#	grep "disable netbios = Yes" | \
-#	awk 'BEGIN{FS=" = "}{print $2}')
-
-ISNETBIOSDISABLED=Yes
 
 RETVAL=0
 
@@ -55,7 +54,7 @@ start() {
 	RETVAL=$?
 	echo
 	KIND="NMB"
-	if [ x"$ISNETBIOSDISABLED" != x"Yes" ]; then
+	if [ x"$START_NMBD" = x"yes" ]; then
 		echo -n $"Starting $KIND services: "
 		daemon nmbd $NMBDOPTIONS
 		RETVAL2=$?
@@ -77,7 +76,7 @@ stop() {
 	[ $RETVAL -eq 0 ] && rm -f /var/run/smbd.pid
 	echo
 	KIND="NMB"
-	if [ x"$ISNETBIOSDISABLED" != x"Yes" ]; then
+	if [ x"$START_NMBD" = x"yes" ]; then
 		echo -n $"Shutting down $KIND services: "
 		killproc nmbd 
 		RETVAL2=$?

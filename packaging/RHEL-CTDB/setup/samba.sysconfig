@@ -4,3 +4,5 @@ SMBDOPTIONS="-D"
 NMBDOPTIONS="-D"
 # Options for winbindd
 WINBINDOPTIONS=""
+# start nmbd? yes/no
+START_NMBD=no
