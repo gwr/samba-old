@@ -357,32 +357,98 @@ void remove_pending_change_notify_requests_by_fid(files_struct *fsp,
 	}
 }
 
+struct notify_fname_state {
+	struct notify_context *ctx;
+	uint32_t action;
+	uint32_t filter;
+	char *fullpath;
+
+	bool do_onelevel;
+	struct file_id fid;
+	char *parent;
+	const char *name;
+};
+
+static void notify_fname_callback(struct event_context *ev,
+				  struct timed_event *te,
+				  const struct timeval *now,
+				  void *private_data)
+{
+	struct notify_fname_state *state = talloc_get_type_abort(
+		private_data, struct notify_fname_state);
+
+	DEBUG(10, ("notify_fname_callback called for fullpath=%s, name=%s, "
+		   "action=%d, filter=%d\n", state->fullpath,
+		   state->do_onelevel ? state->name : "::no onelevel",
+		   (int)state->action, (int)state->filter));
+
+	if (state->do_onelevel) {
+		notify_onelevel(state->ctx, state->action, state->filter,
+				state->fid, state->name);
+	}
+	notify_trigger(state->ctx, state->action, state->filter,
+		       state->fullpath);
+	TALLOC_FREE(te);
+}
+
 void notify_fname(connection_struct *conn, uint32 action, uint32 filter,
 		  const char *path)
 {
-	char *fullpath;
-	char *parent;
-	const char *name;
+	struct notify_fname_state *state;
 	SMB_STRUCT_STAT sbuf;
+	struct timed_event *te;
+	const char *name;
+
+
+	state = talloc(talloc_tos(), struct notify_fname_state);
+	if (state == NULL) {
+		return;
+	}
+	state->ctx = conn->notify_ctx;
+	state->action = action;
+	state->filter = filter;
 
 	if (path[0] == '.' && path[1] == '/') {
 		path += 2;
 	}
-	if (asprintf(&fullpath, "%s/%s", conn->connectpath, path) == -1) {
-		DEBUG(0, ("asprintf failed\n"));
+
+	state->fullpath = talloc_asprintf(state, "%s/%s", conn->connectpath,
+					  path);
+	if (state->fullpath == NULL) {
+		TALLOC_FREE(state);
+		DEBUG(0, ("talloc_asprintf failed\n"));
 		return;
 	}
 
-	if (parent_dirname_talloc(talloc_tos(), path, &parent, &name)
-	    && (SMB_VFS_STAT(conn, parent, &sbuf) != -1)) {
-		notify_onelevel(conn->notify_ctx, action, filter,
-				SMB_VFS_FILE_ID_CREATE(conn, sbuf.st_dev,
-						       sbuf.st_ino),
-				name);
+	if (parent_dirname_talloc(state, path, &state->parent, &name)
+	    && (SMB_VFS_STAT(conn, state->parent, &sbuf) != -1)) {
+		state->do_onelevel = true;
+		state->name = talloc_strdup(state, name);
+		if (state->name == NULL) {
+			DEBUG(0, ("talloc_strdup failed\n"));
+			TALLOC_FREE(state);
+			return;
+		}
+		state->fid = SMB_VFS_FILE_ID_CREATE(conn, sbuf.st_dev,
+						    sbuf.st_ino);
+	} else {
+		state->do_onelevel = false;
 	}
 
-	notify_trigger(conn->notify_ctx, action, filter, fullpath);
-	SAFE_FREE(fullpath);
+	DEBUG(10, ("notify_fname created for fullpath=%s, name=%s, "
+		   "action=%d, filter=%d\n", state->fullpath,
+		   state->do_onelevel ? state->name : "::no onelevel",
+		   (int)state->action, (int)state->filter));
+
+	te = event_add_timed(smbd_event_context(), NULL, timeval_zero(),
+			     "notify_fname_callback", notify_fname_callback,
+			     state);
+	if (te == NULL) {
+		DEBUG(10, ("event_add_timed failed\n"));
+		TALLOC_FREE(state);
+		return;
+	}
+	state = talloc_move(te, &state);
 }
 
 static void notify_fsp(files_struct *fsp, uint32 action, const char *name)
