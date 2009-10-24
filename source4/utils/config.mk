@@ -30,6 +30,7 @@ INSTALLDIR = BINDIR
 PRIVATE_DEPENDENCIES = \
 		LIBSAMBA-HOSTCONFIG \
 		LIBSAMBA-UTIL \
+		POPT_SAMBA \
 		NDR_XATTR \
 		WRAP_XATTR \
 		LIBSAMBA-ERRORS
@@ -44,12 +45,19 @@ MANPAGES += $(utilssrcdir)/man/getntacl.1
 #################################
 # Start BINARY setntacl
 [BINARY::setntacl]
-# disabled until rewritten
-#INSTALLDIR = BINDIR
-# End BINARY setntacl
-#################################
+INSTALLDIR = BINDIR
+PRIVATE_DEPENDENCIES = \
+		LIBSAMBA-HOSTCONFIG \
+		LIBSAMBA-UTIL \
+		POPT_SAMBA \
+		NDR_XATTR \
+		WRAP_XATTR \
+		LIBSAMBA-ERRORS
 
-setntacl_OBJ_FILES = $(utilssrcdir)/setntacl.o
+setntacl_OBJ_FILES =  $(utilssrcdir)/setntacl.o
+
+# End BINARY getntacl
+#################################
 
 #################################
 # Start BINARY generateblob 

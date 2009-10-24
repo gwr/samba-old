@@ -20,10 +20,13 @@
 */
 
 #include "includes.h"
+#include "libcli/security/security.h"
 #include "system/filesys.h"
 #include "librpc/gen_ndr/ndr_xattr.h"
-#include "../lib/util/wrap_xattr.h"
+#include "lib/cmdline/popt_common.h"
 #include "param/param.h"
+#include "param/loadparm.h"
+
 
 static void ntacl_print_debug_helper(struct ndr_print *ndr, const char *format, ...) PRINTF_ATTRIBUTE(2,3);
 
@@ -82,6 +85,13 @@ static NTSTATUS get_ntacl(TALLOC_CTX *mem_ctx,
 	return NT_STATUS_OK;
 }
 
+static void print_ntacl_sddl(TALLOC_CTX *mem_ctx,
+			struct xattr_NTACL *ntacl)
+{
+	const char *sddl;
+	sddl = sddl_encode(mem_ctx,ntacl->info.sd,NULL);
+	printf("%s\n",sddl);
+}
 static void print_ntacl(TALLOC_CTX *mem_ctx,
 			const char *fname,
 			struct xattr_NTACL *ntacl)
@@ -96,24 +106,52 @@ static void print_ntacl(TALLOC_CTX *mem_ctx,
 	talloc_free(pr);
 }
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
-	NTSTATUS status;
+	int ret = 0;
+ 	NTSTATUS status;
 	struct xattr_NTACL *ntacl;
 	ssize_t ntacl_len;
+	int print_as_sddl = 0;
+	char *readfile = NULL;
+	poptContext pc;
+	struct loadparm_context *lp_ctx;
+	struct poptOption long_options[] = {
+		POPT_AUTOHELP
+		{"as-sddl", '\0', POPT_ARG_NONE, &print_as_sddl, true, "Print NT ACL as SDDL"},
+		POPT_COMMON_SAMBA
+		POPT_COMMON_VERSION
+		{ NULL }
+	};
 
-	if (argc != 2) {
-		fprintf(stderr, "Usage: getntacl FILENAME\n");
-		return 1;
+	setup_logging(NULL, DEBUG_STDERR);
+
+	pc = poptGetContext(NULL, argc, argv, long_options, 
+			    POPT_CONTEXT_KEEP_FIRST);
+	poptSetOtherOptionHelp(pc, "[OPTION(S)...] file");
+
+	while(poptGetNextOpt(pc) != -1);
+	// Skip programe name
+	poptGetArg(pc); 
+	if(poptPeekArg(pc)) {
+		readfile = strdup(poptGetArg(pc)); 
 	}
 
-	status = get_ntacl(NULL, argv[1], &ntacl, &ntacl_len);
+
+	lp_ctx = cmdline_lp_ctx;
+
+	status = get_ntacl(NULL, readfile, &ntacl, &ntacl_len);
+	
 	if (!NT_STATUS_IS_OK(status)) {
 		fprintf(stderr, "get_ntacl failed: %s\n", nt_errstr(status));
 		return 1;
 	}
-
-	print_ntacl(ntacl, argv[1], ntacl);
+	
+	if( print_as_sddl ) {
+		print_ntacl_sddl(ntacl,  ntacl);
+	} else {
+		print_ntacl(ntacl, readfile, ntacl);
+	}
 
 	talloc_free(ntacl);
 
