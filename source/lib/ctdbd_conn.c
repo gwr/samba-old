@@ -1162,6 +1162,7 @@ NTSTATUS ctdbd_traverse(uint32 db_id,
 
 		if (NT_STATUS_EQUAL(status, NT_STATUS_END_OF_FILE)) {
 			status = NT_STATUS_OK;
+			break;
 		}
 
 		if (!NT_STATUS_IS_OK(status)) {
