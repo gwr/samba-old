@@ -52,6 +52,23 @@ MANPAGES += $(utilssrcdir)/man/getntacl.1
 setntacl_OBJ_FILES = $(utilssrcdir)/setntacl.o
 
 #################################
+# Start BINARY generateblob 
+[BINARY::generateblob]
+INSTALLDIR = BINDIR
+PRIVATE_DEPENDENCIES = \
+		LIBSAMBA-HOSTCONFIG \
+		LIBSAMBA-UTIL \
+		POPT_SAMBA \
+		NDR_XATTR \
+		WRAP_XATTR \
+		LIBSAMBA-ERRORS
+
+generateblob_OBJ_FILES =  $(utilssrcdir)/generateblob.o
+
+# End BINARY generateblob
+#################################
+
+#################################
 # Start BINARY setnttoken
 [BINARY::setnttoken]
 INSTALLDIR = BINDIR
