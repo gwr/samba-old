@@ -17,11 +17,20 @@ python_uuid_OBJ_FILES = $(pyscriptsrcdir)/uuidmodule.o
 
 [PYTHON::python_glue]
 LIBRARY_REALNAME = samba/glue.$(SHLIBEXT)
-PRIVATE_DEPENDENCIES = LIBNDR LIBLDB SAMDB CREDENTIALS pyldb python_dcerpc_misc python_dcerpc_security pyauth pyldb_util pyparam_util
+PRIVATE_DEPENDENCIES = LIBNDR LIBLDB SAMDB CREDENTIALS pyldb python_dcerpc_misc python_dcerpc_security pyauth pyldb_util pyparam_util WRAP_XATTR
 
 python_glue_OBJ_FILES = $(pyscriptsrcdir)/pyglue.o
 
 $(python_glue_OBJ_FILES): CFLAGS+=-I$(ldbsrcdir)
+
+[PYTHON::python_xattr]
+LIBRARY_REALNAME = samba/xattr.$(SHLIBEXT)
+PRIVATE_DEPENDENCIES = LIBNDR LIBLDB SAMDB CREDENTIALS  python_dcerpc_security pyparam_util WRAP_XATTR
+#PRIVATE_DEPENDENCIES = LIBNDR LIBLDB SAMDB CREDENTIALS  python_dcerpc_security pyauth pyldb_util pyparam_util WRAP_XATTR
+
+python_xattr_OBJ_FILES = $(pyscriptsrcdir)/pyxattr.o
+
+$(python_xattr_OBJ_FILES): CFLAGS+=-I$(ldbsrcdir)
 
 _PY_FILES = $(shell find $(pyscriptsrcdir)/samba ../lib/subunit/python -name "*.py")
 
