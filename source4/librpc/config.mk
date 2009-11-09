@@ -256,7 +256,7 @@ NDR_KRB5PAC_OBJ_FILES = ../librpc/gen_ndr/ndr_krb5pac.o ../librpc/ndr/ndr_krb5pa
 [SUBSYSTEM::NDR_XATTR]
 PUBLIC_DEPENDENCIES = LIBNDR NDR_SECURITY
 
-NDR_XATTR_OBJ_FILES = ../librpc/gen_ndr/ndr_xattr.o ../librpc/ndr/ndr_xattr.o
+NDR_XATTR_OBJ_FILES = ../librpc/gen_ndr/ndr_xattr.o ../librpc/ndr/ndr_xattr.o 
 
 [SUBSYSTEM::NDR_OPENDB]
 PUBLIC_DEPENDENCIES = LIBNDR
@@ -360,6 +360,11 @@ PUBLIC_DEPENDENCIES = \
 	NDR_NTLMSSP NDR_DFSBLOBS
 
 NDR_TABLE_OBJ_FILES = ../librpc/ndr/ndr_table.o $(gen_ndrsrcdir)/tables.o
+
+[SUBSYSTEM::RPC_NDR_XATTR]
+PUBLIC_DEPENDENCIES = NDR_XATTR dcerpc
+
+RPC_NDR_XATTR_OBJ_FILES = ../librpc/gen_ndr/ndr_xattr_c.o 
 
 [SUBSYSTEM::RPC_NDR_ROT]
 PUBLIC_DEPENDENCIES = NDR_ROT dcerpc
@@ -712,6 +717,12 @@ LIBRARY_REALNAME = samba/dcerpc/security.$(SHLIBEXT)
 PRIVATE_DEPENDENCIES = PYTALLOC python_dcerpc_misc python_dcerpc NDR_SECURITY
 
 python_dcerpc_security_OBJ_FILES = ../librpc/gen_ndr/py_security.o
+
+[PYTHON::python_dcerpc_xattr]
+LIBRARY_REALNAME = samba/dcerpc/xattr.$(SHLIBEXT)
+PRIVATE_DEPENDENCIES = PYTALLOC python_dcerpc_misc python_dcerpc python_dcerpc_security NDR_XATTR RPC_NDR_XATTR
+
+python_dcerpc_xattr_OBJ_FILES = ../librpc/gen_ndr/py_xattr.o
 
 $(IDL_HEADER_FILES) $(IDL_NDR_PARSE_H_FILES) $(IDL_NDR_PARSE_C_FILES) \
 	$(IDL_NDR_CLIENT_C_FILES) $(IDL_NDR_CLIENT_H_FILES) \
