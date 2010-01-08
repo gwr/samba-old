@@ -91,11 +91,11 @@ static PyMethodDef py_xattr_methods[] = {
 	{ NULL }
 };
 
-void initxattr(void)
+void initxattr_native(void)
 {
 	PyObject *m;
 
-	m = Py_InitModule3("xattr", py_xattr_methods, 
+	m = Py_InitModule3("xattr_native", py_xattr_methods, 
 			   "Python bindings for xattr manipulation.");
 	if (m == NULL)
 		return;
