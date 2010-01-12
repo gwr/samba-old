@@ -637,7 +637,7 @@ def check_diff_name(newpaths,paths,creds,session,basedn,names,ischema):
 			if (not hashOverwrittenAtt.has_key(att) or not (hashOverwrittenAtt.get(att)&2^msgElt.flags())):
 				if  handle_special_case(att,delta,reference,current,ischema)==0 and msgElt.flags()!=ldb.FLAG_MOD_ADD:
 					i = 0
-					if opts.debugchange:
+					if opts.debugchange or opts.debugall:
 						message(CHANGE, "dn= "+str(dn)+ " "+att + " with flag "+str(msgElt.flags())+ " is not allowed to be changed/removed, I discard this change ...")
 						for e in range(0,len(current[0][att])):
 							message(CHANGE,"old %d : %s"%(i,str(current[0][att][e])))
