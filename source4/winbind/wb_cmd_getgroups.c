@@ -36,11 +36,20 @@ struct cmd_getgroups_state {
 	gid_t *gids;
 };
 
+/* The idea is to get the groups for a user
+   We receive one user from this we search for his uid
+   From the uid we search for his SID
+   From the SID we search for the list of groups
+   And with the list of groups we search for each group its gid
+*/
 static void cmd_getgroups_recv_pwnam(struct composite_context *ctx);
 static void wb_getgroups_uid2sid_recv(struct composite_context *ctx);
 static void wb_getgroups_userdomsgroups_recv(struct composite_context *ctx);
 static void cmd_getgroups_recv_gid(struct composite_context *ctx);
 
+/*
+  Ask for the uid from the username
+*/
 struct composite_context *wb_cmd_getgroups_send(TALLOC_CTX *mem_ctx,
 						 struct wbsrv_service *service,
 						 const char* username)
@@ -71,6 +80,9 @@ struct composite_context *wb_cmd_getgroups_send(TALLOC_CTX *mem_ctx,
 	return result;
 }
 
+/*
+  Receive the uid and send request for SID
+*/
 static void cmd_getgroups_recv_pwnam(struct composite_context *ctx)
 {
 	struct composite_context *res;
@@ -83,7 +95,7 @@ static void cmd_getgroups_recv_pwnam(struct composite_context *ctx)
 	DEBUG(5, ("cmd_getgroups_recv_pwnam called\n"));
 
 	state->ctx->status = wb_cmd_getpwnam_recv(ctx, state, &pw);
-	if (composite_is_ok(state->ctx)) { 
+	if (composite_is_ok(state->ctx)) {
 		res = wb_uid2sid_send(state, service, pw->pw_uid);
 		NT_STATUS_HAVE_NO_MEMORY(res);
 		DEBUG(6, ("cmd_getgroups_recv_pwnam uid %d\n",pw->pw_uid));
@@ -92,6 +104,9 @@ static void cmd_getgroups_recv_pwnam(struct composite_context *ctx)
 	}
 }
 
+/*
+  Receive the SID and request groups through the userdomgroups helper
+*/
 static void wb_getgroups_uid2sid_recv(struct composite_context *ctx)
 {
 	struct composite_context *res;
@@ -122,6 +137,9 @@ static void wb_getgroups_uid2sid_recv(struct composite_context *ctx)
 	}
 }
 
+/*
+  Receive groups and search for uid for the first group
+*/
 static void wb_getgroups_userdomsgroups_recv(struct composite_context *ctx) {
         struct cmd_getgroups_state *state =
 		talloc_get_type(ctx->async.private_data,
@@ -132,10 +150,13 @@ static void wb_getgroups_userdomsgroups_recv(struct composite_context *ctx) {
 	DEBUG(5, ("wb_getgroups_userdomsgroups_recv called\n"));
 	state->ctx->status = wb_cmd_userdomgroups_recv(ctx,state,&num_sids,&sids);
 	if (!composite_is_ok(state->ctx)) return;
+
 	DEBUG(5, ("wb_getgroups_userdomsgroups_recv %d groups\n",num_sids));
+
 	state->sids=sids;
 	state->num_groups=num_sids;
 	state->current_group=0;
+
 	if(num_sids > 0) {
 		state->gids = talloc_array(state, struct gid_t *, state->num_groups);
 		ctx = wb_sid2gid_send(state, state->service, state->sids[state->current_group]);
@@ -145,6 +166,9 @@ static void wb_getgroups_userdomsgroups_recv(struct composite_context *ctx) {
 	}
 }
 
+/*
+  Receive and uid the previous searched group and request the uid for the next one
+*/
 static void cmd_getgroups_recv_gid(struct composite_context *ctx)
 {
         struct cmd_getgroups_state *state =
@@ -157,7 +181,8 @@ static void cmd_getgroups_recv_gid(struct composite_context *ctx)
 
 	state->ctx->status = wb_sid2gid_recv(ctx, &gid);
 	if(!composite_is_ok(state->ctx)) return;
-	state->gids[state->current_group] = gid; 
+
+	state->gids[state->current_group] = gid;
 	DEBUG(5, ("cmd_getgroups_recv_gid group %d \n",state->current_group));
 
 	state->current_group++;
@@ -169,6 +194,9 @@ static void cmd_getgroups_recv_gid(struct composite_context *ctx)
 	}
 }
 
+/*
+  Return list of uids when finished
+*/
 NTSTATUS wb_cmd_getgroups_recv(struct composite_context *ctx,TALLOC_CTX *mem_ctx,gid_t **groups,uint32_t *num_groups)
 {
 	NTSTATUS status = composite_wait(ctx);
