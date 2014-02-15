@@ -1472,7 +1472,7 @@ static bool torture_chkpath_test(struct torture_context *tctx,
 static const char long_path[] = "w1upcm3tAwzzy6oq7f78Avbs3q4mfpvjA0xf1y0xqz08Awcm3ynb1upjAwxvdfk65lu1Arpwgz8l42ifAr9mzg8uhyo7Ah6zc7u29clzA1gq3tqyd0cxArk01giaz79qAuxumapqn3icA89spdoexon0Aacicq2989zxAi90muk6a96oAaef3vkcqg1tA897nl6vo75uAlq09wdzexzmAuuhmi7acekeAcetsrdz6e8uAz3hhjfldytpAhpfm8r/76zlwAn7t2u6gjg4eAsaw8x00woc4Aajn4k5kcj4vA7jzsoupfclbAv3vfgdw89hzA1qjhxr1w35qAgw4aknd1jwpA7ujk1lfq67eAptkwbyyncwnAl8f4zegku9tAi8yvkvmy6ckA6wiej3m3pigAja4w4jg09dhAb262jl2zophAzhfa9hrikkuAypw9j0zdk1eA9n2fg0fafhrAbq3rnrgz048At5tbcnnm17dAazfvfblm5snAws91d385q/m0Azedrn5gmzsyA15tg11sysgxAmto6h8zlea5A0deptmn38t9Agme3fizuyi7A8gko6rgtnh5Ak7di2mztba7A2ltnnzro80mAoqj02yxk73pAs5ykocnhfkcAlpym221omq3A5ty4qfxrb8oAtv3f1hfghzhAlokzkw75zmjAb32tfv1ldbtA13i5nlx24l6A65ikxst9222Afh47n1epevvAi2xmwn1ti87A8oe4cny5yfuAckwlo0x2x8uA/qnpgvbrs6xvAcu2nka1pl73Adkmw38del2bAo4wjfb302efAg540v44buobAdellz7ipbm1Ai1c7v7w27vxAjqgwo1onmfjAnf92h4v82boAyk75zjawnynAtv1bhf0wpz2A983u20v0vijAlnut05tigesA8f9ve4h7734A2jcdu204azkAhfg0llaf0p1Aalqir0heg5iA48h6kyappnyA4zlbr7avjswA2xh396cf99rAl5n00wqubdpAkma/123456789";
 
 static bool
-torture_longpath(struct torture_context *tctx,
+torture_longpath_1(struct torture_context *tctx,
 		   struct smbcli_state *cli)
 {
 	char p[1034] ;
@@ -1496,6 +1496,127 @@ torture_longpath(struct torture_context *tctx,
 	}
 	return correct;
 }
+
+static bool
+torture_longpath_2(struct torture_context *tctx,
+		   struct smbcli_state *cli)
+{
+	char p[1034] ;
+	int fnum, i = 0 ;
+	bool correct = true;
+	union smb_mkdir md;
+	NTSTATUS status;
+	uint16_t attr;
+
+	md.mkdir.level = RAW_MKDIR_MKDIR;
+	md.mkdir.in.path = p;
+
+	i = 0;
+	p[0] = '\0';
+	while (i < 992) {
+		/* go 32-chars at a time */
+		strlcat(p, "\\abcdefghijklmnopqrstuvwxyz12345", sizeof(p));
+		i = strlen(p);
+
+		status = smbcli_getatr(cli->tree, p, &attr, NULL, NULL);
+		if (NT_STATUS_IS_ERR(status)) {
+			status = smb_raw_mkdir(cli->tree, &md);
+		}
+
+		if (NT_STATUS_IS_ERR(status)) {
+			fprintf(stderr, "(%s) Failed to mkdir %s, error=%s\n",
+				__location__, p, smbcli_errstr(cli->tree));
+			return (false);
+		}
+	}		
+	strlcat(p, "\\", sizeof(p));
+	i = strlen(p);
+
+	while (i < 1033) {
+		
+		p[i++] = '0' + (i % 10);
+		p[i] = '\0' ;
+
+		torture_comment(tctx, "Test long pathname, len=%d\n", i);
+
+		fnum = smbcli_open(cli->tree, p, O_RDWR|O_CREAT, DENY_NONE);
+		if (fnum == -1) {
+			torture_comment(tctx, "open failed (%s)\n",
+					smbcli_errstr(cli->tree));
+			correct = false;
+		}
+		smbcli_close(cli->tree, fnum);
+	}
+	return correct;
+}
+
+static bool
+torture_longpath_3(struct torture_context *tctx,
+		   struct smbcli_state *cli)
+{
+	char p[1034] ;
+	int fnum, pass;
+	int i = 0 ;
+	bool correct = true;
+	union smb_mkdir md;
+	NTSTATUS status;
+	uint16_t attr;
+
+	md.mkdir.level = RAW_MKDIR_MKDIR;
+	md.mkdir.in.path = p;
+	pass = 0;
+
+top:
+	i = 0;
+	p[0] = '\0';
+	while (i < 1024) {
+		/* go 32-chars at a time */
+		strlcat(p, "\\abcdefghijklmnopqrstuvwxyz12345", sizeof(p));
+		i = strlen(p);
+
+		if (pass == 0 && i < 992)
+			continue;
+
+		status = smbcli_getatr(cli->tree, p, &attr, NULL, NULL);
+		if (NT_STATUS_IS_ERR(status)) {
+			if (pass == 0) {
+				pass = 1;
+				goto top;
+			}
+			status = smb_raw_mkdir(cli->tree, &md);
+		}
+
+		if (NT_STATUS_IS_ERR(status)) {
+			fprintf(stderr, "(%s) Failed to mkdir %s, error=%s\n",
+				__location__, p, smbcli_errstr(cli->tree));
+			return (false);
+		}
+	}		
+	strlcat(p, "\\", sizeof(p));
+	i = strlen(p);
+
+	while (i < 1020) {
+		p[i++] = '0' + (i % 10);
+	}
+
+	while (i < 1028) {
+		
+		p[i++] = '0' + (i % 10);
+		p[i] = '\0' ;
+
+		torture_comment(tctx, "Test long pathname, len=%d\n", i);
+
+		fnum = smbcli_open(cli->tree, p, O_RDWR|O_CREAT, DENY_NONE);
+		if (fnum == -1) {
+			torture_comment(tctx, "open failed (%s)\n",
+					smbcli_errstr(cli->tree));
+			correct = false;
+		}
+		smbcli_close(cli->tree, fnum);
+	}
+	return correct;
+}
+
 
 /*
  * This is a test to excercise some weird Samba3 error paths.
@@ -1952,7 +2073,9 @@ NTSTATUS torture_base_init(void)
 	torture_suite_add_1smb_test(suite, "scan-pipe_number", run_pipe_number);
 	torture_suite_add_1smb_test(suite, "scan-ioctl", torture_ioctl_test);
 	torture_suite_add_smb_multi_test(suite, "scan-maxfid", run_maxfidtest);
-	torture_suite_add_1smb_test(suite, "longpath", torture_longpath);
+	torture_suite_add_1smb_test(suite, "longpath1", torture_longpath_1);
+	torture_suite_add_1smb_test(suite, "longpath2", torture_longpath_2);
+	torture_suite_add_1smb_test(suite, "longpath3", torture_longpath_3);
 
 	suite->description = talloc_strdup(suite, 
 					"Basic SMB tests (imported from the original smbtorture)");
