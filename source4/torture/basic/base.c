@@ -1550,6 +1550,10 @@ torture_longpath_2(struct torture_context *tctx,
 	return correct;
 }
 
+/*
+ * This creates a directory path of length 992
+ * and then creates files where the total length > 1024
+ */
 static bool
 torture_longpath_3(struct torture_context *tctx,
 		   struct smbcli_state *cli)
@@ -1600,6 +1604,73 @@ top:
 	}
 
 	while (i < 1028) {
+		
+		p[i++] = '0' + (i % 10);
+		p[i] = '\0' ;
+
+		torture_comment(tctx, "Test long pathname, len=%d\n", i);
+
+		fnum = smbcli_open(cli->tree, p, O_RDWR|O_CREAT, DENY_NONE);
+		if (fnum == -1) {
+			torture_comment(tctx, "open failed (%s)\n",
+					smbcli_errstr(cli->tree));
+			correct = false;
+		}
+		smbcli_close(cli->tree, fnum);
+	}
+	return correct;
+}
+
+/*
+ * This creates a directory path of length > 1024,
+ * and then creates files longer still.
+ */
+static bool
+torture_longpath_4(struct torture_context *tctx,
+		   struct smbcli_state *cli)
+{
+	char p[1500] ;
+	int fnum, pass;
+	int i = 0 ;
+	bool correct = true;
+	union smb_mkdir md;
+	NTSTATUS status;
+	uint16_t attr;
+
+	md.mkdir.level = RAW_MKDIR_MKDIR;
+	md.mkdir.in.path = p;
+	pass = 0;
+
+top:
+	i = 0;
+	p[0] = '\0';
+	while (i < 1056) {
+		/* go 32-chars at a time */
+		strlcat(p, "\\abcdefghijklmnopqrstuvwxyz12345", sizeof(p));
+		i = strlen(p);
+
+		if (pass == 0 && i < 992)
+			continue;
+
+		status = smbcli_getatr(cli->tree, p, &attr, NULL, NULL);
+		if (NT_STATUS_IS_ERR(status)) {
+			if (pass == 0) {
+				pass = 1;
+				goto top;
+			}
+			status = smb_raw_mkdir(cli->tree, &md);
+		}
+
+		if (NT_STATUS_IS_ERR(status)) {
+			fprintf(stderr, "(%s) Failed to mkdir %s, error=%s\n",
+				__location__, p, smbcli_errstr(cli->tree));
+			return (false);
+		}
+	}		
+	strlcat(p, "\\", sizeof(p));
+	i = strlen(p);
+
+	while (i < 1060) {
 		
 		p[i++] = '0' + (i % 10);
 		p[i] = '\0' ;
@@ -2076,6 +2147,7 @@ NTSTATUS torture_base_init(void)
 	torture_suite_add_1smb_test(suite, "longpath1", torture_longpath_1);
 	torture_suite_add_1smb_test(suite, "longpath2", torture_longpath_2);
 	torture_suite_add_1smb_test(suite, "longpath3", torture_longpath_3);
+	torture_suite_add_1smb_test(suite, "longpath4", torture_longpath_4);
 
 	suite->description = talloc_strdup(suite, 
 					"Basic SMB tests (imported from the original smbtorture)");
