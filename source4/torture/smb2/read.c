@@ -32,7 +32,6 @@
 		printf("(%s) Incorrect status %s - should be %s\n", \
 		       __location__, nt_errstr(status), nt_errstr(correct)); \
 		ret = false; \
-		goto done; \
 	}} while (0)
 
 #define CHECK_VALUE(v, correct) do { \
@@ -40,7 +39,6 @@
 		printf("(%s) Incorrect value %s=%u - should be %u\n", \
 		       __location__, #v, (unsigned)v, (unsigned)correct); \
 		ret = false; \
-		goto done; \
 	}} while (0)
 
 #define FNAME "smb2_readtest.dat"
@@ -113,6 +111,12 @@ static bool test_read_eof(struct torture_context *torture, struct smb2_tree *tre
 
 	rd.in.min_count = 0x10000 - 2;
 	rd.in.length = 1;
+	rd.in.offset = 0;
+	status = smb2_read(tree, tmp_ctx, &rd);
+	CHECK_STATUS(status, NT_STATUS_END_OF_FILE);
+
+	rd.in.min_count = 1;
+	rd.in.length = 0x10000 - 2;
 	rd.in.offset = 0;
 	status = smb2_read(tree, tmp_ctx, &rd);
 	CHECK_STATUS(status, NT_STATUS_END_OF_FILE);
