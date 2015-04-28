@@ -23,6 +23,11 @@
 
 #include <tommath_class.h>
 
+/* Some systems (Solaris, illumos) define ERR as some number. */
+#ifdef	ERR
+#undef	ERR
+#endif
+
 #ifndef MIN
    #define MIN(x,y) ((x)<(y)?(x):(y))
 #endif
