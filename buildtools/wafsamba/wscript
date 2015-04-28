@@ -388,6 +388,16 @@ def configure(conf):
     conf.DEFINE('_GNU_SOURCE', 1, add_to_cflags=True)
     conf.DEFINE('_XOPEN_SOURCE_EXTENDED', 1, add_to_cflags=True)
 
+    if conf.env['SYSTEM_UNAME_SYSNAME'] == 'SunOS':
+        conf.DEFINE('_XOPEN_SOURCE', 600, add_to_cflags=True)
+        conf.DEFINE('__EXTENSIONS__', 1, add_to_cflags=True)
+        conf.DEFINE('_XPG6', '', add_to_cflags=True)
+        # Sigh... Couldn't make this work. Had to set in the environment.
+        # conf.ADD_CFLAGS('-std=c99', testflags=True)
+    else:
+        # XXX Most platforms should be fine with this?
+        conf.DEFINE('_XOPEN_SOURCE', 600, add_to_cflags=True)
+
     # on Tru64 certain features are only available with _OSF_SOURCE set to 1
     # and _XOPEN_SOURCE set to 600
     if conf.env['SYSTEM_UNAME_SYSNAME'] == 'OSF1':
