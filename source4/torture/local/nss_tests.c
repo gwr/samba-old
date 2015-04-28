@@ -19,6 +19,8 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <unistd.h>
+
 #include "includes.h"
 
 #include "torture/torture.h"
@@ -349,7 +351,12 @@ static bool test_enum_r_passwd(struct torture_context *tctx,
 	while (1) {
 		torture_comment(tctx, "Testing getpwent_r\n");
 
+#ifdef	SOLARIS_GETPWENT_R
+		pwdp = getpwent_r(&pwd, buffer, sizeof(buffer));
+		ret = (pwdp == NULL) ? ENOENT : 0;
+#else
 		ret = getpwent_r(&pwd, buffer, sizeof(buffer), &pwdp);
+#endif
 		if (ret != 0) {
 			if (ret != ENOENT) {
 				torture_comment(tctx, "got %d return code\n", ret);
@@ -543,7 +550,12 @@ static bool test_enum_r_group(struct torture_context *tctx,
 	while (1) {
 		torture_comment(tctx, "Testing getgrent_r\n");
 
+#ifdef	SOLARIS_GETGRENT_R
+		grpp = getgrent_r(&grp, buffer, sizeof(buffer));
+		ret = (grpp == NULL) ? ENOENT : 0;
+#else
 		ret = getgrent_r(&grp, buffer, sizeof(buffer), &grpp);
+#endif
 		if (ret != 0) {
 			if (ret != ENOENT) {
 				torture_comment(tctx, "got %d return code\n", ret);
@@ -690,6 +702,10 @@ static bool test_group_r_cross(struct torture_context *tctx)
 	return true;
 }
 
+#ifdef	SOLARIS_GETGRENT_R	/* better config... */
+extern int _getgroupsbymember(const char *, gid_t[], int, int);
+#endif
+
 static bool test_getgrouplist(struct torture_context *tctx,
 			      const char *user,
 			      gid_t gid,
@@ -702,13 +718,27 @@ static bool test_getgrouplist(struct torture_context *tctx,
 
 	torture_comment(tctx, "Testing getgrouplist: %s\n", user);
 
+#ifdef	SOLARIS_GETGRENT_R
+	num_groups = sysconf(_SC_NGROUPS_MAX);
+	ret = 0;
+#else
 	ret = getgrouplist(user, gid, NULL, &num_groups);
+#endif
 	if (ret == -1 || num_groups != 0) {
 
 		groups = talloc_array(tctx, gid_t, num_groups);
 		torture_assert(tctx, groups, "out of memory\n");
 
+#ifdef	SOLARIS_GETGRENT_R	/* better config... */
+		groups[0] = gid;
+		ret = _getgroupsbymember(user, groups, num_groups, 1);
+		if (ret > 0)
+			num_groups = ret;
+		else
+			ret = -1;
+#else
 		ret = getgrouplist(user, gid, groups, &num_groups);
+#endif
 	}
 
 	torture_assert(tctx, (ret != -1), "failed to call getgrouplist");
