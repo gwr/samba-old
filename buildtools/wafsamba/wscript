@@ -446,6 +446,7 @@ def configure(conf):
 
     if conf.env['SYSTEM_UNAME_SYSNAME'] == 'SunOS':
         conf.DEFINE('_XOPEN_SOURCE', 600, add_to_cflags=True)
+        # need -D__EXTENSIONS__ for stuff like vasprintf
         conf.DEFINE('__EXTENSIONS__', 1, add_to_cflags=True)
         conf.DEFINE('_XPG6', '', add_to_cflags=True)
         # Sigh... Couldn't make this work. Had to set in the environment.
