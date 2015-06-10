@@ -57,7 +57,6 @@
 		       "(%s) wrong value for %s  0x%x should be 0x%x\n", \
 		       __location__, #v, (int)v, (int)correct); \
 		ret = false; \
-		goto done; \
 	}} while (0)
 
 #define CHECK_WIRE_STR(field, value) do { \
@@ -66,7 +65,6 @@
 			"(%s) %s [%s] != %s\n",  __location__, #field, \
 			field.s, value); \
 		ret = false; \
-		goto done; \
 	}} while (0)
 
 #define WAIT_FOR_ASYNC_RESPONSE(req) \
@@ -293,6 +291,8 @@ static bool torture_smb2_notify_dir(struct torture_context *torture,
 	torture_comment(torture, "Testing notify mkdir\n");
 
 	req = smb2_notify_send(tree1, &(notify.smb2));
+
+	smb_msleep(500);
 	smb2_util_mkdir(tree2, fname);
 
 	status = smb2_notify_recv(req, torture, &(notify.smb2));
@@ -318,10 +318,10 @@ static bool torture_smb2_notify_dir(struct torture_context *torture,
 
 	smb2_util_mkdir(tree2, fname);
 	smb2_util_rmdir(tree2, fname);
+	req = smb2_notify_send(tree1, &(notify.smb2));
+	smb_msleep(500);
 	smb2_util_mkdir(tree2, fname);
 	smb2_util_rmdir(tree2, fname);
-	smb_msleep(200);
-	req = smb2_notify_send(tree1, &(notify.smb2));
 	status = smb2_notify_recv(req, torture, &(notify.smb2));
 	CHECK_STATUS(status, NT_STATUS_OK);
 	CHECK_VAL(notify.smb2.out.num_changes, 4);
