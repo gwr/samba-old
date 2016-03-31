@@ -2049,6 +2049,16 @@ static NTSTATUS smb1cli_inbuf_parse_chain(uint8_t *buf, TALLOC_CTX *mem_ctx,
 		 */
 		bcc_ofs = wct_ofs + sizeof(uint8_t) + wct * sizeof(uint16_t);
 		bcc = SVAL(hdr, bcc_ofs);
+		/*
+		 * Hacks for extended create response from Windows,
+		 * which encodes 50 words but sets bcc=42, so we get
+		 * the byte count from what's really the MaxAccess
+		 * field (typically 0x1ff).  The create response
+		 * never has a byte-count part, so just zap it.
+		 */
+		if (cmd == SMBntcreateX)
+			bcc = 0;
+
 		needed += bcc * sizeof(uint8_t);
 		if (len < needed) {
 			DEBUG(10, ("%s: %d bytes left, expected at least %d\n",
