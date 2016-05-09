@@ -35,6 +35,27 @@ do { \
 		       "wire_bad_flags"); \
 } while (0)
 
+/* See: NOTIFY_MASK_TEST */
+#define torture_check_int_equal_cont(torture_ctx,got,expected,cmt)	\
+	do { int __got = (got), __expected = (expected); \
+	if (__got != __expected) { \
+		torture_result(torture_ctx, TORTURE_FAIL, \
+			__location__": "#got" was %d (0x%X), expected %d (0x%X): %s", \
+			__got, __got, __expected, __expected, cmt); \
+		continue; \
+	} \
+	} while(0)
+
+#define torture_check_str_equal_cont(torture_ctx,got,expected,cmt)\
+	do { const char *__got = (got), *__expected = (expected); \
+	if (strcmp_safe(__got, __expected) != 0) { \
+		torture_result(torture_ctx, TORTURE_FAIL, \
+					   __location__": "#got" was %s, expected %s: %s", \
+					   __got, __expected, cmt); \
+		continue; \
+	} \
+	} while(0)
+
 /* 
    basic testing of change notify on directories
 */
@@ -301,6 +322,7 @@ static bool test_notify_dir(struct torture_context *tctx,
 
 	notify.nttrans.in.file.fnum = fnum;
 	req = smb_raw_changenotify_send(cli->tree, &notify);
+	smb_msleep(500);
 
 	cl.close.level = RAW_CLOSE_CLOSE;
 	cl.close.in.file.fnum = fnum;
@@ -757,9 +779,9 @@ static bool test_notify_mask(struct torture_context *tctx,
 		    Action == NOTIFY_ACTION_OLD_NAME) { \
 			torture_comment(tctx, "(rename file special handling OK)\n"); \
 		} else { \
-			torture_assert_int_equal_goto(tctx, \
+			torture_check_int_equal_cont(tctx, \
 				notify.nttrans.out.num_changes,\
-				nchanges, ret, done, \
+				nchanges, \
 				talloc_asprintf(tctx, \
 					"nchanges=%d expected=%d action=%d " \
 					"filter=0x%08x\n", \
@@ -767,9 +789,9 @@ static bool test_notify_mask(struct torture_context *tctx,
 					nchanges, \
 					notify.nttrans.out.changes[0].action, \
 					notify.nttrans.in.completion_filter)); \
-			torture_assert_int_equal_goto(tctx, \
+			torture_check_int_equal_cont(tctx, \
 				notify.nttrans.out.changes[0].action, \
-				Action, ret, done, \
+				Action, \
 				talloc_asprintf(tctx, \
 					"nchanges=%d action=%d " \
 					"expectedAction=%d filter=0x%08x\n", \
@@ -777,9 +799,9 @@ static bool test_notify_mask(struct torture_context *tctx,
 					notify.nttrans.out.changes[0].action, \
 					Action, \
 					notify.nttrans.in.completion_filter)); \
-			torture_assert_str_equal_goto(tctx, \
+			torture_check_str_equal_cont(tctx, \
 				notify.nttrans.out.changes[0].name.s, \
-				"tname1", ret, done, \
+				"tname1", \
 				talloc_asprintf(tctx, \
 					"nchanges=%d action=%d filter=0x%08x " \
 					"name=%s expected_name=tname1\n", \
@@ -791,8 +813,8 @@ static bool test_notify_mask(struct torture_context *tctx,
 		mask |= (1<<i); \
 	} \
 	if ((expected) != mask) { \
-		torture_assert_int_not_equal_goto(tctx, ((expected) & ~mask), \
-				0, ret, done, "Too few bits"); \
+		torture_result(tctx, TORTURE_FAIL, \
+			__location__": got 0x%X expected 0x%x", mask, expected); \
 		torture_comment(tctx, "WARNING: trigger on too many bits. mask=0x%08x expected=0x%08x\n", \
 		       mask, expected); \
 	} \
@@ -1054,6 +1076,7 @@ static bool test_notify_tdis(struct torture_context *tctx,
 	notify.nttrans.in.recursive = true;
 
 	req = smb_raw_changenotify_send(cli->tree, &notify);
+	smb_msleep(200);
 
 	status = smbcli_tdis(cli);
 	torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
@@ -1124,6 +1147,7 @@ static bool test_notify_exit(struct torture_context *tctx,
 	notify.nttrans.in.recursive = true;
 
 	req = smb_raw_changenotify_send(cli->tree, &notify);
+	smb_msleep(200);
 
 	status = smb_raw_exit(cli->session);
 	torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
@@ -1193,6 +1217,7 @@ static bool test_notify_ulogoff(struct torture_context *tctx,
 	notify.nttrans.in.recursive = true;
 
 	req = smb_raw_changenotify_send(cli->tree, &notify);
+	smb_msleep(200);
 
 	status = smb_raw_ulogoff(cli->session);
 	torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
@@ -1332,8 +1357,10 @@ static bool test_notify_double(struct torture_context *tctx,
 	notify.nttrans.in.recursive = true;
 
 	req1 = smb_raw_changenotify_send(cli->tree, &notify);
+	smb_msleep(200);
 	req2 = smb_raw_changenotify_send(cli->tree, &notify);
 
+	smb_msleep(200);
 	smbcli_mkdir(cli->tree, BASEDIR "\\subdir-name");
 
 	status = smb_raw_changenotify_recv(req1, tctx, &notify);
@@ -1557,6 +1584,7 @@ static bool test_notify_overflow(struct torture_context *tctx,
 
 	notify.nttrans.in.recursive = true;
 	req1 = smb_raw_changenotify_send(cli->tree, &notify);
+	smb_msleep(200);
 
 	/* cancel initial requests so the buffer is setup */
 	smb_raw_ntcancel(req1);
