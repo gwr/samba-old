@@ -1946,6 +1946,7 @@ static bool test_durable_open_oplock(struct torture_context *tctx,
 	/* Disconnect after getting the batch */
 	talloc_free(tree1);
 	tree1 = NULL;
+	smb_msleep(500);
 
 	/*
 	 * Windows7 (build 7000) will break a batch oplock immediately if the

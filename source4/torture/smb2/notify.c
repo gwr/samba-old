@@ -99,12 +99,15 @@ static bool test_valid_request(struct torture_context *torture,
 	max_buffer_size = torture_setting_ulong(torture, "cn_max_buffer_size",
 						0x00080000);
 
+	torture_comment(torture, "using buffer_size = 0x%x\n", max_buffer_size);
+
 	n.in.recursive		= 0x0000;
 	n.in.buffer_size	= max_buffer_size;
 	n.in.file.handle	= dh;
 	n.in.completion_filter	= FILE_NOTIFY_CHANGE_ALL;
 	n.in.unknown		= 0x00000000;
 	req = smb2_notify_send(tree, &n);
+	smb_msleep(200);
 
 	while (!req->cancel.can_cancel && req->state <= SMB2_REQUEST_RECV) {
 		if (tevent_loop_once(torture->ev) != 0) {
@@ -125,8 +128,10 @@ static bool test_valid_request(struct torture_context *torture,
 	 * if the change response doesn't fit in the buffer
 	 * NOTIFY_ENUM_DIR is returned.
 	 */
+	torture_comment(torture, "using buffer_size = 0\n");
 	n.in.buffer_size	= 0x00000000;
 	req = smb2_notify_send(tree, &n);
+	smb_msleep(200);
 
 	while (!req->cancel.can_cancel && req->state <= SMB2_REQUEST_RECV) {
 		if (tevent_loop_once(torture->ev) != 0) {
@@ -144,8 +149,10 @@ static bool test_valid_request(struct torture_context *torture,
 	 * if the change response fits in the buffer we get
 	 * NT_STATUS_OK again
 	 */
+	torture_comment(torture, "again buffer_size = 0x%x\n", max_buffer_size);
 	n.in.buffer_size	= max_buffer_size;
 	req = smb2_notify_send(tree, &n);
+	smb_msleep(200);
 
 	while (!req->cancel.can_cancel && req->state <= SMB2_REQUEST_RECV) {
 		if (tevent_loop_once(torture->ev) != 0) {
@@ -172,12 +179,14 @@ static bool test_valid_request(struct torture_context *torture,
 	status = smb2_util_roothandle(tree, &dh);
 	CHECK_STATUS(status, NT_STATUS_OK);
 
+	torture_comment(torture, "using buffer_size = 1\n");
 	n.in.recursive		= 0x0000;
 	n.in.buffer_size	= 0x00000001;
 	n.in.file.handle	= dh;
 	n.in.completion_filter	= FILE_NOTIFY_CHANGE_ALL;
 	n.in.unknown		= 0x00000000;
 	req = smb2_notify_send(tree, &n);
+	smb_msleep(200);
 
 	while (!req->cancel.can_cancel && req->state <= SMB2_REQUEST_RECV) {
 		if (tevent_loop_once(torture->ev) != 0) {
@@ -191,8 +200,11 @@ static bool test_valid_request(struct torture_context *torture,
 	status = smb2_notify_recv(req, torture, &n);
 	CHECK_STATUS(status, STATUS_NOTIFY_ENUM_DIR);
 
+	torture_comment(torture, "again buffer_size = 0x%x\n", max_buffer_size);
 	n.in.buffer_size        = max_buffer_size;
 	req = smb2_notify_send(tree, &n);
+	smb_msleep(200);
+
 	while (!req->cancel.can_cancel && req->state <= SMB2_REQUEST_RECV) {
 		if (tevent_loop_once(torture->ev) != 0) {
 			break;
@@ -291,8 +303,8 @@ static bool torture_smb2_notify_dir(struct torture_context *torture,
 	torture_comment(torture, "Testing notify mkdir\n");
 
 	req = smb2_notify_send(tree1, &(notify.smb2));
+	smb_msleep(200);
 
-	smb_msleep(500);
 	smb2_util_mkdir(tree2, fname);
 
 	status = smb2_notify_recv(req, torture, &(notify.smb2));
@@ -319,21 +331,28 @@ static bool torture_smb2_notify_dir(struct torture_context *torture,
 	smb2_util_mkdir(tree2, fname);
 	smb2_util_rmdir(tree2, fname);
 	req = smb2_notify_send(tree1, &(notify.smb2));
-	smb_msleep(500);
+	smb_msleep(200);
 	smb2_util_mkdir(tree2, fname);
 	smb2_util_rmdir(tree2, fname);
 	status = smb2_notify_recv(req, torture, &(notify.smb2));
 	CHECK_STATUS(status, NT_STATUS_OK);
 	CHECK_VAL(notify.smb2.out.num_changes, 4);
-	CHECK_VAL(notify.smb2.out.changes[0].action, NOTIFY_ACTION_ADDED);
-	CHECK_WIRE_STR(notify.smb2.out.changes[0].name, "subdir-name");
-	CHECK_VAL(notify.smb2.out.changes[1].action, NOTIFY_ACTION_REMOVED);
-	CHECK_WIRE_STR(notify.smb2.out.changes[1].name, "subdir-name");
-	CHECK_VAL(notify.smb2.out.changes[2].action, NOTIFY_ACTION_ADDED);
-	CHECK_WIRE_STR(notify.smb2.out.changes[2].name, "subdir-name");
-	CHECK_VAL(notify.smb2.out.changes[3].action, NOTIFY_ACTION_REMOVED);
-	CHECK_WIRE_STR(notify.smb2.out.changes[3].name, "subdir-name");
-
+	if (notify.smb2.out.num_changes > 0) {
+	  CHECK_VAL(notify.smb2.out.changes[0].action, NOTIFY_ACTION_ADDED);
+	  CHECK_WIRE_STR(notify.smb2.out.changes[0].name, "subdir-name");
+	}
+	if (notify.smb2.out.num_changes > 1) {
+	  CHECK_VAL(notify.smb2.out.changes[1].action, NOTIFY_ACTION_REMOVED);
+	  CHECK_WIRE_STR(notify.smb2.out.changes[1].name, "subdir-name");
+	}
+	if (notify.smb2.out.num_changes > 2) {
+	  CHECK_VAL(notify.smb2.out.changes[2].action, NOTIFY_ACTION_ADDED);
+	  CHECK_WIRE_STR(notify.smb2.out.changes[2].name, "subdir-name");
+	}
+	if (notify.smb2.out.num_changes > 3) {
+	  CHECK_VAL(notify.smb2.out.changes[3].action, NOTIFY_ACTION_REMOVED);
+	  CHECK_WIRE_STR(notify.smb2.out.changes[3].name, "subdir-name");
+	}
 	count = torture_numops;
 	torture_comment(torture,
 		"Testing buffered notify on create of %d files\n", count);
@@ -396,7 +415,7 @@ static bool torture_smb2_notify_dir(struct torture_context *torture,
 	CHECK_STATUS(status, NT_STATUS_OK);
 
 	CHECK_VAL(notify.smb2.out.num_changes, count);
-	for (i=1;i<count;i++) {
+	for (i=1;i<notify.smb2.out.num_changes;i++) {
 		CHECK_VAL(notify.smb2.out.changes[i].action,
 			  NOTIFY_ACTION_ADDED);
 	}
@@ -458,6 +477,8 @@ static bool torture_smb2_notify_dir(struct torture_context *torture,
 
 	notify.smb2.in.file.handle = h1;
 	req = smb2_notify_send(tree1, &(notify.smb2));
+
+	smb_msleep(500);
 
 	ZERO_STRUCT(cl.smb2);
 	cl.smb2.level = RAW_CLOSE_SMB2;
@@ -1787,11 +1808,15 @@ static bool torture_smb2_notify_double(struct torture_context *torture,
 	notify.smb2.in.recursive = true;
 
 	req1 = smb2_notify_send(tree1, &(notify.smb2));
+	WAIT_FOR_ASYNC_RESPONSE(req1);
+	smb_msleep(200);
 	smb2_cancel(req1);
 	status = smb2_notify_recv(req1, torture, &(notify.smb2));
 	CHECK_STATUS(status, NT_STATUS_CANCELLED);
 
 	req2 = smb2_notify_send(tree1, &(notify.smb2));
+	WAIT_FOR_ASYNC_RESPONSE(req2);
+	smb_msleep(200);
 	smb2_cancel(req2);
 	status = smb2_notify_recv(req2, torture, &(notify.smb2));
 	CHECK_STATUS(status, NT_STATUS_CANCELLED);
@@ -2042,6 +2067,8 @@ static bool torture_smb2_notify_overflow(struct torture_context *torture,
 
 	notify.smb2.in.recursive = true;
 	req1 = smb2_notify_send(tree, &(notify.smb2));
+	WAIT_FOR_ASYNC_RESPONSE(req1);
+	smb_msleep(200);
 
 	/* cancel initial requests so the buffer is setup */
 	smb2_cancel(req1);

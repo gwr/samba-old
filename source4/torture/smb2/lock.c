@@ -3003,7 +3003,7 @@ static bool test_replay(struct torture_context *torture,
 	/*
 	 * Server will not grant same Byte Range using a different Bucket Num
 	 */
-	lck.in.lock_sequence = 0x410 + 0x1;
+	lck.in.lock_sequence = 0x400 + 0x1;
 	el.flags = SMB2_LOCK_FLAG_EXCLUSIVE | SMB2_LOCK_FLAG_FAIL_IMMEDIATELY;
 	status = smb2_lock(tree, &lck);
 	CHECK_STATUS(status, NT_STATUS_LOCK_NOT_GRANTED);
@@ -3013,7 +3013,7 @@ static bool test_replay(struct torture_context *torture,
 	/*
 	 * Test Unlock replay detection
 	 */
-	lck.in.lock_sequence = 0x410 + 0x2;
+	lck.in.lock_sequence = 0x400 + 0x2;
 	el.flags = SMB2_LOCK_FLAG_UNLOCK;
 	status = smb2_lock(tree, &lck);
 	CHECK_STATUS(status, NT_STATUS_OK);
@@ -3023,14 +3023,14 @@ static bool test_replay(struct torture_context *torture,
 	status = smb2_lock(tree, &lck);
 	CHECK_STATUS(status, NT_STATUS_OK);
 
-	lck.in.lock_sequence = 0x410 + 0x3;
+	lck.in.lock_sequence = 0x400 + 0x3;
 	el.flags = SMB2_LOCK_FLAG_UNLOCK;
 	status = smb2_lock(tree, &lck);
 	CHECK_STATUS(status, NT_STATUS_RANGE_NOT_LOCKED);
 
 	torture_comment(torture, "Testing Lock (ignored) Replay detection "
 				 "(Bucket No: 65):\n");
-	lck.in.lock_sequence = 0x420 + 0x1;
+	lck.in.lock_sequence = 0x410 + 0x1;
 	el.flags = SMB2_LOCK_FLAG_EXCLUSIVE | SMB2_LOCK_FLAG_FAIL_IMMEDIATELY;
 	status = smb2_lock(tree, &lck);
 	CHECK_STATUS(status, NT_STATUS_OK);

@@ -30,6 +30,7 @@
 #include "lib/cmdline/popt_common.h"
 #include "param/param.h"
 #include "torture/raw/proto.h"
+#include "tevent.h"
 
 #define CHECK_STATUS(status, correct) do { \
 	if (!NT_STATUS_EQUAL(status, correct)) { \
@@ -551,6 +552,7 @@ static bool test_async(struct torture_context *tctx,
 
 	/* cancel with the wrong bits set */
 	lock[0].offset = 100;
+	lock[0].count = 9;
 	io.lockx.in.timeout = 0;
 	io.lockx.in.mode = LOCKING_ANDX_CANCEL_LOCK;
 	status = smb_raw_lock(cli->tree, &io);
@@ -558,6 +560,7 @@ static bool test_async(struct torture_context *tctx,
 
 	/* cancel the right range */
 	lock[0].offset = 100;
+	lock[0].count = 10;
 	io.lockx.in.timeout = 0;
 	io.lockx.in.mode = LOCKING_ANDX_CANCEL_LOCK | LOCKING_ANDX_LARGE_FILES;
 	status = smb_raw_lock(cli->tree, &io);
@@ -607,8 +610,8 @@ static bool test_async(struct torture_context *tctx,
 	io.lockx.in.mode = LOCKING_ANDX_CANCEL_LOCK | LOCKING_ANDX_LARGE_FILES;
 	io.lockx.in.locks = lock;
 	status = smb_raw_lock(cli->tree, &io);
-	CHECK_STATUS(status, NT_STATUS_OK);
-
+	/* CHECK_STATUS(status, NT_STATUS_OK); */
+	if (status == NT_STATUS_OK)
 	torture_warning(tctx, "Target server accepted a lock cancel "
 			      "request with multiple locks. This violates "
 			      "MS-CIFS 2.2.4.32.1.\n");
@@ -709,6 +712,9 @@ static bool test_async(struct torture_context *tctx,
 	torture_assert(tctx,(req != NULL), talloc_asprintf(tctx,
 		       "Failed to setup pending lock (%s)\n", __location__));
 
+	(void)tevent_loop_once(tctx->ev);
+	smb_msleep(200);
+
 	/* Try to cancel the second lock range */
 	io.lockx.in.timeout = 0;
 	io.lockx.in.lock_cnt = 1;
@@ -789,6 +795,10 @@ static bool test_async(struct torture_context *tctx,
 	req = smb_raw_lock_send(cli->tree, &io);
 	torture_assert(tctx,(req != NULL), talloc_asprintf(tctx,
 		       "Failed to setup timed lock (%s)\n", __location__));
+
+	(void)tevent_loop_once(tctx->ev);
+	smb_msleep(200);
+	
 
 	status = smbcli_close(cli->tree, fnum);
 	CHECK_STATUS(status, NT_STATUS_OK);
@@ -944,6 +954,28 @@ static bool test_async(struct torture_context *tctx,
 		       "lock cancel by ulogoff was not immediate (%s)\n", __location__));
 
 	torture_comment(tctx, "Testing cancel by tdis\n");
+	session = smbcli_session_init(cli->transport, tctx, false, options);
+	setup.in.sesskey = cli->transport->negotiate.sesskey;
+	setup.in.capabilities = cli->transport->negotiate.capabilities;
+	setup.in.workgroup = lpcfg_workgroup(tctx->lp_ctx);
+	setup.in.credentials = cmdline_credentials;
+	setup.in.gensec_settings = lpcfg_gensec_settings(tctx, tctx->lp_ctx);
+	status = smb_composite_sesssetup(session, &setup);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	session->vuid = setup.out.vuid;
+
+	torture_comment(tctx, "create new tree context\n");
+	share = torture_setting_string(tctx, "share", NULL);
+	host  = torture_setting_string(tctx, "host", NULL);
+	tree = smbcli_tree_init(session, tctx, false);
+	tcon.generic.level = RAW_TCON_TCONX;
+	tcon.tconx.in.flags = TCONX_FLAG_EXTENDED_RESPONSE;
+	tcon.tconx.in.password = data_blob(NULL, 0);
+	tcon.tconx.in.path = talloc_asprintf(tctx, "\\\\%s\\%s", host, share);
+	tcon.tconx.in.device = "A:";
+	status = smb_raw_tcon(tree, tctx, &tcon);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	tree->tid = tcon.tconx.out.tid;
 	tree->session = cli->session;
 
 	fname = BASEDIR "\\test_tdis.txt";
