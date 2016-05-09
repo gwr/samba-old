@@ -1380,6 +1380,71 @@ done:
 	return ret;
 }
 
+/*
+ * Test related query dir commands using actual fid that was
+ * opened in a prior compound (not the special all-ones fid).
+ */
+static bool test_compound(struct torture_context *tctx,
+				   struct smb2_tree *tree)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	const int num_files = 100;
+	struct file_elem files[100] = {};
+	struct smb2_handle dirh;
+	struct smb2_find f;
+	struct smb2_request *req1, *req2;
+	union smb_search_data *data1, *data2;
+	NTSTATUS status1, status2;
+	unsigned int count1, count2;
+	bool ret = true;
+
+
+
+	torture_comment(tctx, "Testing compound query dir with open fid\n");
+
+	status1 = populate_tree(tctx, mem_ctx, tree, files, num_files, &dirh);
+	if (status1 != NT_STATUS_OK) {
+		torture_comment(tctx, "populate_tree failed, 0x%x\n", status1);
+		goto done;
+	}
+
+	ZERO_STRUCT(f);
+	f.in.file.handle	= dirh;
+	f.in.pattern		= "*";
+	f.in.continue_flags	= SMB2_CONTINUE_FLAG_RESTART;
+	f.in.max_response_size	= 0x1000;
+	f.in.level              = SMB2_FIND_BOTH_DIRECTORY_INFO;
+
+	smb2_transport_credits_ask_num(tree->session->transport, 2);
+	smb2_transport_compound_start(tree->session->transport, 2);
+	req1 = smb2_find_send(tree, &f);
+
+	f.in.continue_flags	= 0;
+	f.in.max_response_size	= 0x80;
+
+	smb2_transport_compound_set_related(tree->session->transport, true);
+	req2 = smb2_find_send(tree, &f);
+
+	status1 = smb2_find_level_recv(req1, mem_ctx, f.in.level, &count1, &data1);
+	status2 = smb2_find_level_recv(req2, mem_ctx, f.in.level, &count2, &data2);
+
+	if (status1 != NT_STATUS_OK) {
+		torture_comment(tctx, "find1 failed, 0x%x\n", status1);
+		goto done;
+	}
+	if (status2 != NT_STATUS_OK) {
+		torture_comment(tctx, "find2 failed, 0x%x\n", status2);
+		goto done;
+	}
+
+done:
+	smb2_util_close(tree, dirh);
+	smb2_deltree(tree, "smb2_dir"); /* XXX: DNAME */
+	talloc_free(mem_ctx);
+
+	return ret;
+}
+
 struct torture_suite *torture_smb2_dir_init(TALLOC_CTX *ctx)
 {
 	struct torture_suite *suite =
@@ -1393,6 +1458,7 @@ struct torture_suite *torture_smb2_dir_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "sorted", test_sorted);
 	torture_suite_add_1smb2_test(suite, "file-index", test_file_index);
 	torture_suite_add_1smb2_test(suite, "large-files", test_large_files);
+	torture_suite_add_1smb2_test(suite, "compound", test_compound);
 	suite->description = talloc_strdup(suite, "SMB2-DIR tests");
 
 	return suite;

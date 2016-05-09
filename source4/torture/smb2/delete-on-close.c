@@ -230,6 +230,7 @@ static bool test_doc_overwrite_if(struct torture_context *tctx, struct smb2_tree
 	CHECK_STATUS(status, NT_STATUS_OK);
 
 	status = smb2_util_close(tree, io.out.file.handle);
+	smb_msleep(200);
 
 	/* Check it was deleted */
 	ZERO_STRUCT(io);
@@ -284,6 +285,7 @@ static bool test_doc_overwrite_if_exist(struct torture_context *tctx, struct smb
 	CHECK_STATUS(status, NT_STATUS_OK);
 
 	status = smb2_util_close(tree, io.out.file.handle);
+	smb_msleep(200);
 
 	/* Next, try to open it for Delete On Close */
 	ZERO_STRUCT(io);
@@ -337,6 +339,7 @@ static bool test_doc_create(struct torture_context *tctx, struct smb2_tree *tree
 	CHECK_STATUS(status, NT_STATUS_OK);
 
 	status = smb2_util_close(tree, io.out.file.handle);
+	smb_msleep(200);
 
 	/* Check it was deleted */
 	ZERO_STRUCT(io);
@@ -390,6 +393,7 @@ static bool test_doc_create_exist(struct torture_context *tctx, struct smb2_tree
 	CHECK_STATUS(status, NT_STATUS_OK);
 
 	status = smb2_util_close(tree, io.out.file.handle);
+	smb_msleep(200);
 
 	/* Next, try to open it for Delete on Close */
 	status = smb2_util_close(tree, io.out.file.handle);
@@ -444,6 +448,7 @@ static bool test_doc_create_if(struct torture_context *tctx, struct smb2_tree *t
 	CHECK_STATUS(status, NT_STATUS_OK);
 
 	status = smb2_util_close(tree, io.out.file.handle);
+	smb_msleep(200);
 
 	/* Check it was deleted */
 	ZERO_STRUCT(io);
@@ -497,6 +502,7 @@ static bool test_doc_create_if_exist(struct torture_context *tctx, struct smb2_t
 	CHECK_STATUS(status, NT_STATUS_OK);
 
 	status = smb2_util_close(tree, io.out.file.handle);
+	smb_msleep(200);
 
 	/* Now try to create it for delete on close */
 	ZERO_STRUCT(io);

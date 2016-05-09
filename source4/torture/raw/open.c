@@ -384,6 +384,18 @@ static bool test_openx(struct torture_context *tctx, struct smbcli_state *cli)
 	CHECK_ALL_INFO(io.openx.out.attrib, attrib & ~FILE_ATTRIBUTE_NONINDEXED);
 	smbcli_close(cli->tree, fnum);
 
+	/* check the extended return flag */
+	io.openx.in.flags = OPENX_FLAGS_ADDITIONAL_INFO | OPENX_FLAGS_EXTENDED_RETURN;
+	io.openx.in.open_func = OPENX_OPEN_FUNC_OPEN;
+	status = smb_raw_open(cli->tree, tctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	if (io.openx.out.access_mask != SEC_STD_ALL) {
+		torture_warning(tctx, "(%s) access_mask 0x%x, should be 0x%x\n",
+		       __location__, io.openx.out.access_mask, SEC_STD_ALL);
+	}
+		
+	smbcli_close(cli->tree, io.openx.out.file.fnum);
+
 	/* now check the search attrib for hidden files - win2003 ignores this? */
 	SET_ATTRIB(FILE_ATTRIBUTE_HIDDEN);
 	CHECK_ALL_INFO(FILE_ATTRIBUTE_HIDDEN, attrib);
@@ -453,18 +465,14 @@ static bool test_openx(struct torture_context *tctx, struct smbcli_state *cli)
 	io.openx.in.size = 0;
 	io.openx.in.timeout = 0;
 	status = smb_raw_open(cli->tree, tctx, &io);
-	CHECK_STATUS(status, NT_STATUS_OK);
-	smbcli_close(cli->tree, io.openx.out.file.fnum);
-
-	/* check the extended return flag */
-	io.openx.in.flags = OPENX_FLAGS_ADDITIONAL_INFO | OPENX_FLAGS_EXTENDED_RETURN;
-	io.openx.in.open_func = OPENX_OPEN_FUNC_OPEN;
-	status = smb_raw_open(cli->tree, tctx, &io);
-	CHECK_STATUS(status, NT_STATUS_OK);
-	CHECK_VAL(io.openx.out.access_mask, SEC_STD_ALL);
+	if (status != NT_STATUS_OK)
+		torture_warning(tctx, "(%s) status 0x%x should be 0\n",
+			__location__, status);
 	smbcli_close(cli->tree, io.openx.out.file.fnum);
 
 	io.openx.in.fname = "\\A.+,;=[].B";
+	io.openx.in.open_func = OPENX_OPEN_FUNC_OPEN;
+	io.openx.in.open_mode = OPENX_MODE_ACCESS_RDWR | OPENX_MODE_DENY_NONE;
 	status = smb_raw_open(cli->tree, tctx, &io);
 	CHECK_STATUS(status, NT_STATUS_OBJECT_NAME_NOT_FOUND);
 
@@ -611,6 +619,8 @@ static bool test_t2open(struct torture_context *tctx, struct smbcli_state *cli)
 	io.t2open.in.open_func = OPENX_OPEN_FUNC_OPEN | OPENX_OPEN_FUNC_CREATE;
 	io.t2open.in.write_time = 0;
 	io.t2open.in.fname = fname;
+	io.t2open.in.num_eas = 0;
+	io.t2open.in.eas = NULL;
 	status = smb_raw_open(cli->tree, tctx, &io);
 	CHECK_STATUS(status, NT_STATUS_OK);
 	fnum = io.t2open.out.file.fnum;
@@ -801,6 +811,21 @@ static bool test_ntcreatex(struct torture_context *tctx, struct smbcli_state *cl
 	CHECK_ALL_INFO(io.ntcreatex.out.is_directory, directory);
 	CHECK_VAL(io.ntcreatex.out.file_type, FILE_TYPE_DISK);
 	smbcli_close(cli->tree, fnum);
+
+	printf("maximum allowed...\n");
+ 	io.ntcreatex.in.access_mask = SEC_FLAG_MAXIMUM_ALLOWED;
+	status = smb_raw_open(cli->tree, tctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	fnum = io.ntcreatex.out.file.fnum;
+	smbcli_close(cli->tree, fnum);
+
+	printf("access_mask=0...\n");
+	io.ntcreatex.in.access_mask = 0;
+	status = smb_raw_open(cli->tree, tctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	fnum = io.ntcreatex.out.file.fnum;
+	smbcli_close(cli->tree, fnum);
+	
 	smbcli_unlink(cli->tree, fname);
 
 

@@ -2055,8 +2055,9 @@ static NTSTATUS smb1cli_inbuf_parse_chain(uint8_t *buf, TALLOC_CTX *mem_ctx,
 		 * the byte count from what's really the MaxAccess
 		 * field (typically 0x1ff).  The create response
 		 * never has a byte-count part, so just zap it.
+		 * Similar problem for SMBopenX on Win7.
 		 */
-		if (cmd == SMBntcreateX)
+		if (cmd == SMBntcreateX || cmd == SMBopenX)
 			bcc = 0;
 
 		needed += bcc * sizeof(uint8_t);
