@@ -1736,6 +1736,181 @@ static bool test_ioctl_copy_chunk_zero_length(struct torture_context *torture,
 	return true;
 }
 
+/*
+   basic testing of the SMB2 "offload" copy ioctls
+*/
+static bool test_ioctl_odx_read(struct torture_context *torture,
+				      struct smb2_tree *tree)
+{
+	struct smb2_handle src_h;
+	NTSTATUS status;
+	uint32_t fsize = 0x4000;
+	union smb_ioctl ioctl;
+	TALLOC_CTX *tmp_ctx = talloc_new(tree);
+	struct fsctl_offload_read_input rd_in;
+	struct fsctl_offload_read_output rd_out;
+	enum ndr_err_code ndr_ret;
+	bool ok;
+
+	smb2_util_unlink(tree, FNAME);
+
+	ok = test_setup_create_fill(torture, tree, tmp_ctx, FNAME,
+				    &src_h, fsize, SEC_RIGHTS_FILE_ALL,
+				    FILE_ATTRIBUTE_NORMAL);
+	torture_assert(torture, ok, "src file create fill");
+
+	ZERO_STRUCT(ioctl);
+	ioctl.smb2.level = RAW_IOCTL_SMB2;
+	ioctl.smb2.in.file.handle = src_h;
+	ioctl.smb2.in.function = FSCTL_OFFLOAD_READ;
+	ioctl.smb2.in.max_response_size = sizeof(rd_out);
+	ioctl.smb2.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL;
+
+	rd_in.size = sizeof(rd_in);
+	rd_in.flags = 0;
+	rd_in.token_time_to_live = 0;
+	rd_in.reserved = 0;
+	rd_in.file_offset = 0;
+	rd_in.length = fsize;
+
+	ndr_ret = ndr_push_struct_blob(&ioctl.smb2.in.out, tmp_ctx, &rd_in,
+			(ndr_push_flags_fn_t)ndr_push_fsctl_offload_read_input);
+	torture_assert_ndr_success(torture, ndr_ret,
+				   "ndr_push_fsctl_offload_read_input");
+
+	status = smb2_ioctl(tree, tmp_ctx, &ioctl.smb2);
+	torture_assert_ntstatus_ok(torture, status, "FSCTL_OFFLOAD_READ");
+
+	ndr_ret = ndr_pull_struct_blob(&ioctl.smb2.out.out, tmp_ctx, &rd_out,
+			(ndr_pull_flags_fn_t)ndr_pull_fsctl_offload_read_output);
+	torture_assert_ndr_success(torture, ndr_ret,
+				   "ndr_pull_fsctl_offload_read_output");
+
+	ndr_print_debug((ndr_print_fn_t)ndr_print_fsctl_offload_read_output, "yo", &rd_out);
+
+	talloc_free(tmp_ctx);
+	return true;
+}
+
+static bool test_ioctl_odx_write_simple(struct torture_context *torture,
+					 struct smb2_tree *tree)
+{
+	struct smb2_handle src_h;
+	struct smb2_handle dest_h;
+	NTSTATUS status;
+	uint32_t fsize = 0x4000;
+	union smb_ioctl ioctl;
+	union smb_setfileinfo sfinfo;
+	TALLOC_CTX *tmp_ctx = talloc_new(tree);
+	struct fsctl_offload_read_input rd_in;
+	struct fsctl_offload_read_output rd_out;
+	struct fsctl_offload_write_input wr_in;
+	struct fsctl_offload_write_output wr_out;
+	enum ndr_err_code ndr_ret;
+	bool ok;
+
+	smb2_util_unlink(tree, FNAME);
+
+	ok = test_setup_create_fill(torture, tree, tmp_ctx, FNAME,
+				    &src_h, fsize-64, SEC_RIGHTS_FILE_ALL,
+				    FILE_ATTRIBUTE_NORMAL);
+	torture_assert(torture, ok, "src file create fill");
+
+	ok = test_setup_create_fill(torture, tree, tmp_ctx, FNAME2,
+				    &dest_h, 0, SEC_RIGHTS_FILE_ALL,
+				    FILE_ATTRIBUTE_NORMAL);
+	torture_assert(torture, ok, "dst file create fill");
+
+	/* Set dest. size */
+	ZERO_STRUCT(sfinfo);
+	sfinfo.generic.level = RAW_SFILEINFO_END_OF_FILE_INFORMATION;
+	sfinfo.generic.in.file.handle = dest_h;
+	sfinfo.end_of_file_info.in.size = fsize;
+	status = smb2_setinfo_file(tree, &sfinfo);
+	torture_assert_ntstatus_ok(torture, status, "set size");
+
+	/* Offload read to get the token */
+
+	ZERO_STRUCT(ioctl);
+	ioctl.smb2.level = RAW_IOCTL_SMB2;
+	ioctl.smb2.in.file.handle = src_h;
+	ioctl.smb2.in.function = FSCTL_OFFLOAD_READ;
+	ioctl.smb2.in.max_response_size = sizeof(rd_out);
+	ioctl.smb2.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL;
+
+	rd_in.size = sizeof(rd_in);
+	rd_in.flags = 0;
+	rd_in.token_time_to_live = 0;
+	rd_in.reserved = 0;
+	rd_in.file_offset = 0;
+	rd_in.length = fsize;
+
+	ndr_ret = ndr_push_struct_blob(&ioctl.smb2.in.out, tmp_ctx,
+				       &rd_in,
+			(ndr_push_flags_fn_t)ndr_push_fsctl_offload_read_input);
+	torture_assert_ndr_success(torture, ndr_ret,
+				   "ndr_push_fsctl_offload_read_input");
+
+	status = smb2_ioctl(tree, tmp_ctx, &ioctl.smb2);
+	torture_assert_ntstatus_ok(torture, status, "FSCTL_OFFLOAD_READ");
+
+	ndr_ret = ndr_pull_struct_blob(&ioctl.smb2.out.out, tmp_ctx, &rd_out,
+			(ndr_pull_flags_fn_t)ndr_pull_fsctl_offload_read_output);
+	torture_assert_ndr_success(torture, ndr_ret,
+				   "ndr_pull_fsctl_offload_read_output");
+
+	ndr_print_debug((ndr_print_fn_t)ndr_print_fsctl_offload_read_output, "yo", &rd_out);
+
+	/* Offload write using that token (always one seg) */
+
+	ioctl.smb2.level = RAW_IOCTL_SMB2;
+	ioctl.smb2.in.file.handle = dest_h;
+	ioctl.smb2.in.function = FSCTL_OFFLOAD_WRITE;
+	ioctl.smb2.in.max_response_size = sizeof(wr_out);
+	ioctl.smb2.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL;
+
+	wr_in.size = sizeof(wr_in);
+	wr_in.flags = 0;
+	wr_in.file_offset = 0;
+	wr_in.copy_length = fsize;
+	wr_in.xfer_offset = 0;
+	memcpy(wr_in.token, rd_out.token, 512);
+
+	ndr_ret = ndr_push_struct_blob(&ioctl.smb2.in.out, tmp_ctx,
+				       &wr_in,
+			(ndr_push_flags_fn_t)ndr_push_fsctl_offload_write_input);
+	torture_assert_ndr_success(torture, ndr_ret,
+				   "ndr_push_fsctl_offload_write_input");
+
+	status = smb2_ioctl(tree, tmp_ctx, &ioctl.smb2);
+	torture_assert_ntstatus_ok(torture, status, "FSCTL_SRV_");
+
+	ndr_ret = ndr_pull_struct_blob(&ioctl.smb2.out.out, tmp_ctx,
+				       &wr_out,
+			(ndr_pull_flags_fn_t)ndr_pull_fsctl_offload_write_output);
+	torture_assert_ndr_success(torture, ndr_ret,
+				   "ndr_pull_fsctl_offload_write_output");
+	ndr_print_debug((ndr_print_fn_t)ndr_print_fsctl_offload_write_output,
+			"yo", &wr_out);
+
+	torture_assert_int_equal(torture, wr_out.length_written,
+				 fsize, "length_written");
+
+	ok = check_pattern(torture, tree, tmp_ctx, dest_h, 0, fsize, 0);
+	if (!ok) {
+		torture_fail(torture, "inconsistent file data");
+	}
+
+	smb2_util_close(tree, src_h);
+	smb2_util_close(tree, dest_h);
+	talloc_free(tmp_ctx);
+	return true;
+}
+
+/*
+ * compressed files
+ */
+
 static NTSTATUS test_ioctl_compress_fs_supported(struct torture_context *torture,
 						 struct smb2_tree *tree,
 						 TALLOC_CTX *mem_ctx,
@@ -2603,6 +2778,8 @@ static bool test_ioctl_sparse_file_flag(struct torture_context *torture,
 	TALLOC_CTX *tmp_ctx = talloc_new(tree);
 	bool ok;
 	bool is_sparse;
+
+	smb2_util_unlink(tree, FNAME);
 
 	ok = test_setup_create_fill(torture, tree, tmp_ctx,
 				    FNAME, &fh, 0, SEC_RIGHTS_FILE_ALL,
@@ -4887,6 +5064,10 @@ struct torture_suite *torture_smb2_ioctl_init(void)
 				     test_ioctl_sparse_qar_overflow);
 	torture_suite_add_1smb2_test(suite, "trim_simple",
 				     test_ioctl_trim_simple);
+	torture_suite_add_1smb2_test(suite, "odx_read",
+				     test_ioctl_odx_read);
+	torture_suite_add_1smb2_test(suite, "odx_write_simple",
+				     test_ioctl_odx_write_simple);
 
 	suite->description = talloc_strdup(suite, "SMB2-IOCTL tests");
 
