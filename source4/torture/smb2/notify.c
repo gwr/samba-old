@@ -97,7 +97,7 @@ static bool test_valid_request(struct torture_context *torture,
 	/* 0x00080000 is the default max buffer size for Windows servers
 	 * pre-Win7 */
 	max_buffer_size = torture_setting_ulong(torture, "cn_max_buffer_size",
-						0x00080000);
+						0x00010000);
 
 	torture_comment(torture, "using buffer_size = 0x%x\n", max_buffer_size);
 
