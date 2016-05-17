@@ -3311,7 +3311,7 @@ static bool test_ioctl_sparse_file_attr(struct torture_context *torture,
 
 	status = test_sparse_get(torture, tmp_ctx, tree, fh, &is_sparse);
 	torture_assert_ntstatus_ok(torture, status, "test_sparse_get");
-	torture_assert(torture, !is_sparse, "sparse attr on open");
+	torture_assert(torture, is_sparse, "sparse attr on open");
 
 	smb2_util_close(tree, fh);
 	talloc_free(tmp_ctx);
