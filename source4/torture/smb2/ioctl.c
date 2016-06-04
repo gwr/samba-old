@@ -1800,6 +1800,7 @@ static bool test_ioctl_odx_write_simple(struct torture_context *torture,
 	NTSTATUS status;
 	uint32_t fsize = 0x4000;
 	union smb_ioctl ioctl;
+	union smb_setfileinfo sfinfo;
 	TALLOC_CTX *tmp_ctx = talloc_new(tree);
 	struct fsctl_offload_read_input rd_in;
 	struct fsctl_offload_read_output rd_out;
@@ -1811,7 +1812,7 @@ static bool test_ioctl_odx_write_simple(struct torture_context *torture,
 	smb2_util_unlink(tree, FNAME);
 
 	ok = test_setup_create_fill(torture, tree, tmp_ctx, FNAME,
-				    &src_h, fsize, SEC_RIGHTS_FILE_ALL,
+				    &src_h, fsize-64, SEC_RIGHTS_FILE_ALL,
 				    FILE_ATTRIBUTE_NORMAL);
 	torture_assert(torture, ok, "src file create fill");
 
@@ -1819,6 +1820,14 @@ static bool test_ioctl_odx_write_simple(struct torture_context *torture,
 				    &dest_h, 0, SEC_RIGHTS_FILE_ALL,
 				    FILE_ATTRIBUTE_NORMAL);
 	torture_assert(torture, ok, "dst file create fill");
+
+	/* Set dest. size */
+	ZERO_STRUCT(sfinfo);
+	sfinfo.generic.level = RAW_SFILEINFO_END_OF_FILE_INFORMATION;
+	sfinfo.generic.in.file.handle = dest_h;
+	sfinfo.end_of_file_info.in.size = fsize;
+	status = smb2_setinfo_file(tree, &sfinfo);
+	torture_assert_ntstatus_ok(torture, status, "set size");
 
 	/* Offload read to get the token */
 
@@ -2769,6 +2778,8 @@ static bool test_ioctl_sparse_file_flag(struct torture_context *torture,
 	TALLOC_CTX *tmp_ctx = talloc_new(tree);
 	bool ok;
 	bool is_sparse;
+
+	smb2_util_unlink(tree, FNAME);
 
 	ok = test_setup_create_fill(torture, tree, tmp_ctx,
 				    FNAME, &fh, 0, SEC_RIGHTS_FILE_ALL,
