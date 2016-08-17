@@ -1117,7 +1117,7 @@ static bool test_raw_oplock_exclusive10(struct torture_context *tctx,
 	CHECK_VAL(io.ntcreatex.out.oplock_level, EXCLUSIVE_OPLOCK_RETURN);
 
 	/* TCP disconnect (XXX: how?) */
-	smbXcli_conn_disconnect(cli1->transport->conn, 0);
+	smbXcli_conn_disconnect(cli1->transport->conn, NT_STATUS_OK);
 	smb_msleep(200);
 
 	torture_comment(tctx, "second open after 1st disconnect\n");

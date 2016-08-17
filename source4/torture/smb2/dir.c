@@ -1403,8 +1403,8 @@ static bool test_compound(struct torture_context *tctx,
 	torture_comment(tctx, "Testing compound query dir with open fid\n");
 
 	status1 = populate_tree(tctx, mem_ctx, tree, files, num_files, &dirh);
-	if (status1 != NT_STATUS_OK) {
-		torture_comment(tctx, "populate_tree failed, 0x%x\n", status1);
+	if (!NT_STATUS_EQUAL(status1, NT_STATUS_OK)) {
+		torture_comment(tctx, "populate_tree failed, %s\n", nt_errstr(status1));
 		goto done;
 	}
 
@@ -1428,12 +1428,12 @@ static bool test_compound(struct torture_context *tctx,
 	status1 = smb2_find_level_recv(req1, mem_ctx, f.in.level, &count1, &data1);
 	status2 = smb2_find_level_recv(req2, mem_ctx, f.in.level, &count2, &data2);
 
-	if (status1 != NT_STATUS_OK) {
-		torture_comment(tctx, "find1 failed, 0x%x\n", status1);
+	if (!NT_STATUS_EQUAL(status1, NT_STATUS_OK)) {
+		torture_comment(tctx, "find1 failed, %s\n", nt_errstr(status1));
 		goto done;
 	}
-	if (status2 != NT_STATUS_OK) {
-		torture_comment(tctx, "find2 failed, 0x%x\n", status2);
+	if (!NT_STATUS_EQUAL(status2, NT_STATUS_OK)) {
+		torture_comment(tctx, "find2 failed, %s\n", nt_errstr(status2));
 		goto done;
 	}
 

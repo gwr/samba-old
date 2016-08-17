@@ -102,7 +102,7 @@ static NTSTATUS smb2_create_complex(struct torture_context *tctx,
 	}
 
 	status = smb2_create(tree, tmp_ctx, &io);
-	if (status == NT_STATUS_EAS_NOT_SUPPORTED) {
+	if (NT_STATUS_EQUAL(status, NT_STATUS_EAS_NOT_SUPPORTED)) {
 		printf("EAs not supported, creating: %s\n", fname);
 		io.in.eas.num_eas = 0;
 		status = smb2_create(tree, tmp_ctx, &io);
