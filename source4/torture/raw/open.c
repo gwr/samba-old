@@ -465,9 +465,9 @@ static bool test_openx(struct torture_context *tctx, struct smbcli_state *cli)
 	io.openx.in.size = 0;
 	io.openx.in.timeout = 0;
 	status = smb_raw_open(cli->tree, tctx, &io);
-	if (status != NT_STATUS_OK)
-		torture_warning(tctx, "(%s) status 0x%x should be 0\n",
-			__location__, status);
+	if (!NT_STATUS_EQUAL(status, NT_STATUS_OK))
+		torture_warning(tctx, "(%s) status %s should be 0\n",
+			__location__, nt_errstr(status));
 	smbcli_close(cli->tree, io.openx.out.file.fnum);
 
 	io.openx.in.fname = "\\A.+,;=[].B";
