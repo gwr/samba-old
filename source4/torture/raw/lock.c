@@ -611,7 +611,7 @@ static bool test_async(struct torture_context *tctx,
 	io.lockx.in.locks = lock;
 	status = smb_raw_lock(cli->tree, &io);
 	/* CHECK_STATUS(status, NT_STATUS_OK); */
-	if (status == NT_STATUS_OK)
+	if (NT_STATUS_EQUAL(status, NT_STATUS_OK))
 	torture_warning(tctx, "Target server accepted a lock cancel "
 			      "request with multiple locks. This violates "
 			      "MS-CIFS 2.2.4.32.1.\n");
