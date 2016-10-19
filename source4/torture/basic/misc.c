@@ -177,6 +177,33 @@ bool run_pipe_number(struct torture_context *tctx,
 	return true;
 }
 
+/*
+ * Call SMB flush on a named pipe
+ */
+bool run_pipe_flush(struct torture_context *tctx, 
+					 struct smbcli_state *cli)
+{
+	union smb_flush flush;
+	const char *pipe_name = "\\WKSSVC";
+	int fnum;
+
+	fnum = smbcli_nt_create_full(cli->tree, pipe_name, 0, SEC_FILE_READ_DATA, FILE_ATTRIBUTE_NORMAL,
+		NTCREATEX_SHARE_ACCESS_READ|NTCREATEX_SHARE_ACCESS_WRITE, NTCREATEX_DISP_OPEN_IF, 0, 0);
+
+	if (fnum == -1) {
+		torture_comment(tctx, "Open of pipe %s failed with error (%s)\n", pipe_name, smbcli_errstr(cli->tree));
+		return false;
+	}
+
+	flush.flush.level = RAW_FLUSH_FLUSH;
+	flush.flush.in.file.fnum = fnum;
+	smb_raw_flush(cli->tree, &flush);
+
+	smbcli_close(cli->tree, fnum);
+
+	return true;
+}
+
 
 
 
