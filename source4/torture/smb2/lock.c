@@ -3112,6 +3112,81 @@ done:
 	return ret;
 }
 
+/**
+ * Test exclusive lock on readonly file.
+ */
+static bool test_readonly(struct torture_context *torture,
+			  struct smb2_tree *tree)
+{
+	NTSTATUS status;
+	bool ret = true;
+	struct smb2_handle h, h2;
+	uint8_t buf[200];
+	struct smb2_lock lck;
+	struct smb2_lock_element el[1];
+	struct smb2_create io;
+
+	const char *fname = BASEDIR "\\readonly.txt";
+
+	status = torture_smb2_testdir(tree, BASEDIR, &h);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	smb2_util_close(tree, h);
+
+	status = torture_smb2_testfile(tree, fname, &h);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	/* Get a 2nd handle, readonly */
+	ZERO_STRUCT(io);
+	io.in.oplock_level = 0;
+	io.in.desired_access = SEC_RIGHTS_FILE_READ;
+	io.in.file_attributes   = FILE_ATTRIBUTE_NORMAL;
+	io.in.create_disposition = NTCREATEX_DISP_OPEN_IF;
+	io.in.share_access = 
+		NTCREATEX_SHARE_ACCESS_DELETE|
+		NTCREATEX_SHARE_ACCESS_READ|
+		NTCREATEX_SHARE_ACCESS_WRITE;
+	io.in.create_options = 0;
+	io.in.fname = fname;
+
+	status = smb2_create(tree, tree, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h2 = io.out.file.handle;
+
+	torture_comment(torture, "Testing exclusive lock in read-only  file:\n");
+
+	/* Setup lock parameters */
+	lck.in.locks		= el;
+	lck.in.lock_count	= 0x0001;
+	lck.in.lock_sequence	= 0x00000000;
+	lck.in.file.handle	= h2;
+	el[0].offset		= 0;
+	el[0].length		= 10;
+	el[0].reserved		= 0x00000000;
+
+	/* Take an exclusive lock */
+	el[0].flags		= SMB2_LOCK_FLAG_EXCLUSIVE |
+				  SMB2_LOCK_FLAG_FAIL_IMMEDIATELY;
+	status = smb2_lock(tree, &lck);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+
+	/* On second handle open the file with OVERWRITE disposition */
+	torture_comment(torture, "  overwrite disposition is allowed on a "
+				 "locked file.\n");
+
+	/* cleanup */
+	lck.in.file.handle	= h2;
+	el[0].flags		= SMB2_LOCK_FLAG_UNLOCK;
+	status = smb2_lock(tree, &lck);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+done:
+	smb2_util_close(tree, h2);
+	smb2_util_close(tree, h);
+	smb2_deltree(tree, BASEDIR);
+	return ret;
+}
+
 /* basic testing of SMB2 locking
 */
 struct torture_suite *torture_smb2_lock_init(TALLOC_CTX *ctx)
@@ -3148,6 +3223,7 @@ struct torture_suite *torture_smb2_lock_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "truncate", test_truncate);
 	torture_suite_add_1smb2_test(suite, "replay", test_replay);
 	torture_suite_add_1smb2_test(suite, "ctdb-delrec-deadlock", test_deadlock);
+	torture_suite_add_1smb2_test(suite, "readonly", test_readonly);
 
 	suite->description = talloc_strdup(suite, "SMB2-LOCK tests");
 
