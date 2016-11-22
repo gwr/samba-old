@@ -1134,6 +1134,59 @@ done:
 	return ret;
 }
 
+static bool
+torture_raw_sfileinfo_attr_access(struct torture_context *tctx,
+    struct smbcli_state *cli)
+{
+	const char *fname = BASEDIR "\\test_attr_access.dat";
+	NTSTATUS status;
+	bool ret = true;
+	union smb_open io;
+	union smb_setfileinfo sfinfo;
+	uint16_t fnum=0;
+
+	torture_assert(tctx, torture_setup_dir(cli, BASEDIR),
+	    "Failed to setup up test directory: " BASEDIR);
+
+	/*
+	 * create a normal file, only r/w access
+	 */
+	io.generic.level = RAW_OPEN_NTCREATEX;
+	io.ntcreatex.in.root_fid.fnum = 0;
+	io.ntcreatex.in.access_mask = SEC_FILE_READ_DATA | SEC_FILE_WRITE_DATA;
+	io.ntcreatex.in.alloc_size = 0;
+	io.ntcreatex.in.file_attr = FILE_ATTRIBUTE_NORMAL;
+	io.ntcreatex.in.share_access = NTCREATEX_SHARE_ACCESS_NONE;
+	io.ntcreatex.in.open_disposition = NTCREATEX_DISP_CREATE;
+	io.ntcreatex.in.create_options = 0;
+	io.ntcreatex.in.impersonation = NTCREATEX_IMPERSONATION_ANONYMOUS;
+	io.ntcreatex.in.security_flags = 0;
+	io.ntcreatex.in.fname = fname;
+	io.ntcreatex.in.flags = 0;
+
+	status = smb_raw_open(cli->tree, tctx, &io);
+	torture_assert_ntstatus_equal_goto(tctx, status, NT_STATUS_OK,
+	    ret, done, "open failed");
+	fnum = io.ntcreatex.out.file.fnum;
+
+	/*
+	 * try to modify attributes.  Should fail.
+	 */
+	ZERO_STRUCT(sfinfo);
+	sfinfo.generic.level = RAW_SFILEINFO_BASIC_INFO;
+	sfinfo.generic.in.file.fnum = fnum;
+	sfinfo.basic_info.in.attrib = FILE_ATTRIBUTE_NORMAL;
+	status = smb_raw_setfileinfo(cli->tree, &sfinfo);
+
+	torture_assert_ntstatus_equal_goto(tctx, status, NT_STATUS_ACCESS_DENIED,
+	    ret, done, "setfileinfo wrong status");
+
+done:
+	smbcli_close(cli->tree, fnum);
+	smbcli_deltree(cli->tree, BASEDIR);
+	return ret;
+}
+
 struct torture_suite *torture_raw_sfileinfo(TALLOC_CTX *mem_ctx)
 {
 	struct torture_suite *suite = torture_suite_create(mem_ctx, "sfileinfo");
@@ -1146,7 +1199,9 @@ struct torture_suite *torture_raw_sfileinfo(TALLOC_CTX *mem_ctx)
 	torture_suite_add_2smb_test(suite, "end-of-file-access",
 	    torture_raw_sfileinfo_eof_access);
 	torture_suite_add_1smb_test(suite, "archive",
-								torture_raw_sfileinfo_archive);
+	    torture_raw_sfileinfo_archive);
+	torture_suite_add_1smb_test(suite, "attr-access",
+	    torture_raw_sfileinfo_attr_access);
 
 	return suite;
 }
