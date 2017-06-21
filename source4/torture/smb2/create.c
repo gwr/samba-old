@@ -1518,7 +1518,73 @@ done:
 }
 
 /*
-   basic testing of SMB2 read
+  test creating a read-only attribute file and writing after create
+*/
+
+static bool test_create_readonly(struct torture_context *tctx,
+				      struct smb2_tree *tree)
+{
+	union smb_open io, io2;
+	union smb_fileinfo finfo;
+	const char *fname = DNAME "\\torture_create_readonly.txt";
+	NTSTATUS status;
+	struct smb2_handle h, h1;
+	bool ret = true;
+	char b = 42;
+
+	torture_comment(tctx,
+		"Checking SMB2_CREATE readonly file and then write.\n");
+	smb2_util_unlink(tree, fname);
+	smb2_deltree(tree, fname);
+
+	status = torture_smb2_testdir(tree, DNAME, &h);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	/* reasonable default parameters */
+	ZERO_STRUCT(io.smb2);
+	io.generic.level = RAW_OPEN_SMB2;
+	io.smb2.in.create_flags = NTCREATEX_FLAGS_EXTENDED;
+	io.smb2.in.alloc_size = 0;
+	io.smb2.in.desired_access = SEC_RIGHTS_FILE_ALL;
+	io.smb2.in.file_attributes = FILE_ATTRIBUTE_READONLY;
+	io.smb2.in.share_access = NTCREATEX_SHARE_ACCESS_READ | NTCREATEX_SHARE_ACCESS_WRITE;
+	io.smb2.in.create_disposition = NTCREATEX_DISP_CREATE;
+	io.smb2.in.create_options = 0;
+	io.smb2.in.impersonation_level = SMB2_IMPERSONATION_ANONYMOUS;
+	io.smb2.in.security_flags = 0;
+	io.smb2.in.fname = fname;
+
+	/* Create the readonly file. */
+
+	status = smb2_create(tree, tctx, &(io.smb2));
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h1 = io.smb2.out.file.handle;
+
+	CHECK_VAL(io.smb2.out.oplock_level, 0);
+	io.smb2.in.create_options = 0;
+	CHECK_VAL(io.smb2.out.create_action, NTCREATEX_ACTION_CREATED);
+	CHECK_ALL_INFO(io.smb2.out.file_attr, attrib);
+
+	/* Now try to write - should succeed. */
+	status = smb2_util_write(tree, io.smb2.out.file.handle, &b, 0, 1);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	/* Try a 2nd r/w open -- should fail. */
+
+	memcpy(&io2.smb2, &io.smb2, sizeof(io2.smb2));
+	io2.smb2.in.create_disposition = NTCREATEX_DISP_OPEN;
+	status = smb2_create(tree, tctx, &(io2.smb2));
+	CHECK_STATUS(status, NT_STATUS_ACCESS_DENIED);
+
+	smb2_util_close(tree, h1);
+	smb2_util_unlink(tree, fname);
+	smb2_deltree(tree, DNAME);
+
+	return ret;
+}
+
+/*
+   basic testing of SMB2 create
 */
 struct torture_suite *torture_smb2_create_init(void)
 {
@@ -1535,6 +1601,7 @@ struct torture_suite *torture_smb2_create_init(void)
 	torture_suite_add_1smb2_test(suite, "aclfile", test_create_acl_file);
 	torture_suite_add_1smb2_test(suite, "acldir", test_create_acl_dir);
 	torture_suite_add_1smb2_test(suite, "nulldacl", test_create_null_dacl);
+	torture_suite_add_1smb2_test(suite, "readonly", test_create_readonly);
 
 	suite->description = talloc_strdup(suite, "SMB2-CREATE tests");
 
