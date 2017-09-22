@@ -546,10 +546,12 @@ static void init_globals(struct loadparm_context *lp_ctx, bool reinit_globals)
 	lpcfg_string_set(Globals.ctx, &Globals.netbios_name,
 			 myhostname_upper());
 
+#ifdef dyn_BINDDNS_DIR
 	lpcfg_string_set(Globals.ctx, &Globals.smb_passwd_file,
 			 get_dyn_SMB_PASSWD_FILE());
 	lpcfg_string_set(Globals.ctx, &Globals.private_dir,
 			 get_dyn_PRIVATE_DIR());
+#endif
 
 	/* use the new 'hash2' method by default, with a prefix of 1 */
 	lpcfg_string_set(Globals.ctx, &Globals.mangling_method, "hash2");

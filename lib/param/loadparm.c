@@ -76,6 +76,10 @@
 #include <cups/http.h>
 #endif
 
+#ifndef dyn_BINDDNS_DIR
+#define dyn_BINDDNS_DIR ""
+#endif
+
 #define standard_sub_basic talloc_strdup
 
 #include "lib/param/param_global.h"
