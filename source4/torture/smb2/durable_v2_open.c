@@ -269,6 +269,12 @@ static bool test_one_durable_v2_open_oplock(struct torture_context *tctx,
 	io.in.persistent_open = request_persistent;
 	io.in.create_guid = GUID_random();
 
+	torture_comment(tctx, "test: L=%s M=%s D=%d P=%d\n",
+			test.level,
+			test.share_mode,
+			test.durable,
+			test.persistent);
+
 	status = smb2_create(tree, mem_ctx, &io);
 	CHECK_STATUS(status, NT_STATUS_OK);
 	_h = io.out.file.handle;
@@ -298,10 +304,25 @@ static bool test_durable_v2_open_oplock_table(struct torture_context *tctx,
 {
 	bool ret = true;
 	uint8_t i;
+	int only = -1;
+	char *env = getenv("TEST_CASE");
+
+	if (env != NULL)
+		only = atoi(env);
 
 	smb2_util_unlink(tree, fname);
 
 	for (i = 0; i < num_tests; i++) {
+		if (only >= 0 && i != only)
+			continue;
+
+		torture_comment(tctx, "case(%d) L=%s SM=%s D=%d P=%d\n",
+				i,
+				table[i].level,
+				table[i].share_mode,
+				table[i].durable,
+				table[i].persistent);
+
 		ret = test_one_durable_v2_open_oplock(tctx,
 						      tree,
 						      fname,
@@ -463,10 +484,25 @@ static bool test_durable_v2_open_lease_table(struct torture_context *tctx,
 {
 	bool ret = true;
 	uint8_t i;
+	int only = -1;
+	char *env = getenv("TEST_CASE");
+
+	if (env != NULL)
+		only = atoi(env);
 
 	smb2_util_unlink(tree, fname);
 
 	for (i = 0; i < num_tests; i++) {
+		if (only >= 0 && i != only)
+			continue;
+
+		torture_comment(tctx, "case(%d) L=%s SM=%s D=%d P=%d\n",
+				i,
+				table[i].type,
+				table[i].share_mode,
+				table[i].durable,
+				table[i].persistent);
+
 		ret = test_one_durable_v2_open_lease(tctx,
 						     tree,
 						     fname,
@@ -937,6 +973,7 @@ bool test_durable_v2_open_reopen2(struct torture_context *tctx,
 	struct GUID create_guid = GUID_random();
 	struct GUID create_guid_invalid = GUID_random();
 	bool ret = true;
+	char *env;
 
 	/* Choose a random name in case the state is left a little funky. */
 	snprintf(fname, 256, "durable_v2_open_reopen2_%s.dat",
@@ -966,6 +1003,15 @@ bool test_durable_v2_open_reopen2(struct torture_context *tctx,
 
 	/* disconnect, leaving the durable open */
 	TALLOC_FREE(tree);
+
+	env = getenv("RECONNECT_WAIT");
+	if (env != NULL) {
+		int secs = atoi(env);
+		if (secs > 0) {
+			torture_comment(tctx, "wait %d sec\n", secs);
+			smb_msleep(1000 * secs);
+		}
+	}
 
 	if (!torture_smb2_connection(tctx, &tree)) {
 		torture_warning(tctx, "couldn't reconnect, bailing\n");
@@ -1264,6 +1310,7 @@ bool test_durable_v2_open_reopen2_lease(struct torture_context *tctx,
 	bool ret = true;
 	struct smbcli_options options;
 	uint32_t caps;
+	char *env;
 
 	caps = smb2cli_conn_server_capabilities(tree->session->transport->conn);
 	if (!(caps & SMB2_CAP_LEASING)) {
@@ -1306,6 +1353,15 @@ bool test_durable_v2_open_reopen2_lease(struct torture_context *tctx,
 
 	/* disconnect, reconnect and then do durable reopen */
 	TALLOC_FREE(tree);
+
+	env = getenv("RECONNECT_WAIT");
+	if (env != NULL) {
+		int secs = atoi(env);
+		if (secs > 0) {
+			torture_comment(tctx, "wait %d sec\n", secs);
+			smb_msleep(1000 * secs);
+		}
+	}
 
 	if (!torture_smb2_connection_ext(tctx, 0, &options, &tree)) {
 		torture_warning(tctx, "couldn't reconnect, bailing\n");
@@ -1854,6 +1910,7 @@ bool test_durable_v2_open_reopen2_persistent(struct torture_context *tctx,
 	bool ret = true;
 	struct smbcli_options options;
 	uint32_t caps;
+	char *env;
 
 	caps = smb2cli_conn_server_capabilities(tree->session->transport->conn);
 	if (!(caps & SMB2_CAP_LEASING)) {
@@ -1891,8 +1948,28 @@ bool test_durable_v2_open_reopen2_persistent(struct torture_context *tctx,
 	CHECK_VAL(io.out.lease_response_v2.lease_key.data[0], lease_key);
 	CHECK_VAL(io.out.lease_response_v2.lease_key.data[1], ~lease_key);
 
+	env = getenv("DISCONNECT_WAIT");
+	if (env != NULL) {
+		int secs = atoi(env);
+		if (secs > 0) {
+			torture_comment(tctx,
+			    "wait %d sec. before disconnect\n", secs);
+			smb_msleep(1000 * secs);
+		}
+	}
+
 	/* disconnect, reconnect and then do durable reopen */
 	TALLOC_FREE(tree);
+
+	env = getenv("RECONNECT_WAIT");
+	if (env != NULL) {
+		int secs = atoi(env);
+		if (secs > 0) {
+			torture_comment(tctx,
+				"wait %d sec. before reconnect\n", secs);
+			smb_msleep(1000 * secs);
+		}
+	}
 
 	if (!torture_smb2_connection_ext(tctx, 0, &options, &tree)) {
 		torture_warning(tctx, "couldn't reconnect, bailing\n");
@@ -1948,7 +2025,6 @@ done:
 
 	return ret;
 }
-
 
 /**
  * basic persistent open test.

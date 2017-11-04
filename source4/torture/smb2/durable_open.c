@@ -750,6 +750,7 @@ static bool test_durable_open_reopen2(struct torture_context *tctx,
 	struct smb2_handle *h = NULL;
 	struct smb2_create io;
 	bool ret = true;
+	char *env;
 
 	/* Choose a random name in case the state is left a little funky. */
 	snprintf(fname, 256, "durable_open_reopen2_%s.dat",
@@ -772,6 +773,15 @@ static bool test_durable_open_reopen2(struct torture_context *tctx,
 
 	/* disconnect, leaving the durable in place */
 	TALLOC_FREE(tree);
+
+	env = getenv("RECONNECT_WAIT");
+	if (env != NULL) {
+		int secs = atoi(env);
+		if (secs > 0) {
+			torture_comment(tctx, "wait %d sec\n", secs);
+			smb_msleep(1000 * secs);
+		}
+	}
 
 	if (!torture_smb2_connection(tctx, &tree)) {
 		torture_warning(tctx, "couldn't reconnect, bailing\n");
@@ -893,6 +903,7 @@ static bool test_durable_open_reopen2_lease(struct torture_context *tctx,
 	bool ret = true;
 	struct smbcli_options options;
 	uint32_t caps;
+	char *env;
 
 	caps = smb2cli_conn_server_capabilities(tree->session->transport->conn);
 	if (!(caps & SMB2_CAP_LEASING)) {
@@ -929,6 +940,15 @@ static bool test_durable_open_reopen2_lease(struct torture_context *tctx,
 
 	/* disconnect, reconnect and then do durable reopen */
 	TALLOC_FREE(tree);
+
+	env = getenv("RECONNECT_WAIT");
+	if (env != NULL) {
+		int secs = atoi(env);
+		if (secs > 0) {
+			torture_comment(tctx, "wait %d sec\n", secs);
+			smb_msleep(1000 * secs);
+		}
+	}
 
 	if (!torture_smb2_connection_ext(tctx, 0, &options, &tree)) {
 		torture_warning(tctx, "couldn't reconnect, bailing\n");

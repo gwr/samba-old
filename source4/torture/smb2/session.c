@@ -65,6 +65,7 @@ bool test_session_reconnect1(struct torture_context *tctx, struct smb2_tree *tre
 	bool ret = true;
 	struct smb2_tree *tree2 = NULL;
 	union smb_fileinfo qfinfo;
+	char *env;
 
 	/* Add some random component to the file name. */
 	snprintf(fname, sizeof(fname), "session_reconnect_%s.dat",
@@ -105,6 +106,15 @@ bool test_session_reconnect1(struct torture_context *tctx, struct smb2_tree *tre
 					   ret, done, "smb2_getinfo_file "
 					   "returned unexpected status");
 	h1 = NULL;
+
+	env = getenv("RECONNECT_WAIT");
+	if (env != NULL) {
+		int secs = atoi(env);
+		if (secs > 0) {
+			torture_comment(tctx, "wait %d sec\n", secs);
+			smb_msleep(1000 * secs);
+		}
+	}
 
 	smb2_oplock_create_share(&io2, fname,
 				 smb2_util_share_access(""),
