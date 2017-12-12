@@ -5288,6 +5288,274 @@ static bool test_ioctl_sparse_qar_overflow(struct torture_context *torture,
 	return true;
 }
 
+/* Begin New */
+
+static NTSTATUS test_ioctl_qfr_req(struct torture_context *torture,
+				   TALLOC_CTX *mem_ctx,
+				   struct smb2_tree *tree,
+				   struct smb2_handle fh,
+				   int64_t req_off,
+				   int64_t req_len,
+				   struct file_region_info **_rsp,
+				   uint32_t *_ret_count)
+{
+	union smb_ioctl ioctl;
+	NTSTATUS status;
+	enum ndr_err_code ndr_ret;
+	struct fsctl_query_file_regions_req qfr_req;
+	struct fsctl_query_file_regions_rsp qfr_rsp;
+	TALLOC_CTX *tmp_ctx = talloc_new(mem_ctx);
+	if (tmp_ctx == NULL) {
+		return NT_STATUS_NO_MEMORY;
+	}
+
+	ZERO_STRUCT(ioctl);
+	ioctl.smb2.level = RAW_IOCTL_SMB2;
+	ioctl.smb2.in.file.handle = fh;
+	ioctl.smb2.in.function = FSCTL_QUERY_FILE_REGIONS;
+	ioctl.smb2.in.max_response_size = 1024;
+	ioctl.smb2.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL;
+
+	qfr_req.req.file_off = req_off;
+	qfr_req.req.len = req_len;
+	qfr_req.req.usage = 1; /* file region usage valid cached data */
+	ZERO_STRUCT(qfr_rsp);
+
+	ndr_ret = ndr_push_struct_blob(&ioctl.smb2.in.out, tmp_ctx, &qfr_req,
+		(ndr_push_flags_fn_t)ndr_push_fsctl_query_file_regions_req);
+	if (ndr_ret != NDR_ERR_SUCCESS) {
+		status = NT_STATUS_UNSUCCESSFUL;
+		goto err_out;
+	}
+
+	status = smb2_ioctl(tree, tmp_ctx, &ioctl.smb2);
+	if (!NT_STATUS_IS_OK(status)) {
+		goto err_out;
+	}
+
+	if (ioctl.smb2.out.out.length == 0) {
+		goto done;
+	}
+
+	if ((ioctl.smb2.out.out.length < 16) != 0) {
+		torture_comment(torture, "invalid qfr rsp len: %zd:",
+				ioctl.smb2.out.out.length);
+		status = NT_STATUS_UNSUCCESSFUL;
+		goto err_out;
+	}
+
+	ndr_ret = ndr_pull_struct_blob(&ioctl.smb2.out.out, tmp_ctx, &qfr_rsp,
+		(ndr_pull_flags_fn_t)ndr_pull_fsctl_query_file_regions_rsp);
+	if (ndr_ret != NDR_ERR_SUCCESS) {
+		status = NT_STATUS_UNSUCCESSFUL;
+		goto err_out;
+	}
+
+done:
+	*_rsp = qfr_rsp.regions;
+	*_ret_count = qfr_rsp.ret_count;
+	status = NT_STATUS_OK;
+err_out:
+	talloc_free(tmp_ctx);
+	return status;
+}
+
+static bool test_ioctl_sparse_qfr(struct torture_context *torture,
+				  struct smb2_tree *tree)
+{
+	union smb_setfileinfo set_io;
+	struct smb2_handle fh;
+	NTSTATUS status;
+	TALLOC_CTX *tmp_ctx = talloc_new(tree);
+	bool ok;
+	struct file_region_info *qfr_rsp = NULL;
+	uint32_t qfr_count = 0;
+
+	/* zero length file, shouldn't have any ranges */
+	ok = test_setup_create_fill(torture, tree, tmp_ctx,
+				    FNAME, &fh, 0, SEC_RIGHTS_FILE_ALL,
+				    FILE_ATTRIBUTE_NORMAL);
+	torture_assert(torture, ok, "setup file");
+
+	status = test_ioctl_qfr_req(torture, tmp_ctx, tree, fh,
+				    0,	/* off */
+				    0x7fffffff,	/* len */
+				    &qfr_rsp,
+				    &qfr_count);
+	torture_assert_ntstatus_ok(torture, status,
+				   "FSCTL_QUERY_FILE_REGIONS req failed");
+	torture_assert_u64_equal(torture, qfr_count, 0,
+				 "unexpected response len");
+
+	status = test_ioctl_qfr_req(torture, tmp_ctx, tree, fh,
+				    0,	/* off */
+				    1024,	/* len */
+				    &qfr_rsp,
+				    &qfr_count);
+	torture_assert_ntstatus_ok(torture, status,
+				   "FSCTL_QUERY_FILE_REGIONS req failed");
+	torture_assert_u64_equal(torture, qfr_count, 0,
+				 "unexpected response len");
+
+	status = test_ioctl_qfr_req(torture, tmp_ctx, tree, fh,
+				    0,	/* off */
+				    1024,	/* len */
+				    &qfr_rsp,
+				    &qfr_count);
+	torture_assert_ntstatus_ok(torture, status,
+				   "FSCTL_QUERY_FILE_REGIONS req failed");
+	torture_assert_u64_equal(torture, qfr_count, 0,
+				 "unexpected response len");
+
+	/* write into the file at 4k offset */
+	ok = write_pattern(torture, tree, tmp_ctx, fh,
+			   4096,	/* off */
+			   1024,	/* len */
+			   4096);	/* pattern offset */
+	torture_assert(torture, ok, "write pattern");
+
+	/* Make a big "hole" at the end */
+	ZERO_STRUCT(set_io);
+	set_io.generic.level = RAW_SFILEINFO_END_OF_FILE_INFORMATION;
+	set_io.generic.in.file.handle = fh;
+	set_io.end_of_file_info.in.size = 0x3FFF0;
+
+	status = smb2_setinfo_file(tree, &set_io);
+	torture_assert_ntstatus_ok(torture, status, "SMB2_SETINFO_FILE");
+
+	/*
+	 * Query range before write off. Whether it's allocated or not is FS
+	 * dependent. NTFS deallocates chunks in 64K increments, but others
+	 * (e.g. XFS, Btrfs, etc.) may deallocate 4K chunks.
+	 */
+	status = test_ioctl_qfr_req(torture, tmp_ctx, tree, fh,
+				    0,	/* off */
+				    4096,	/* len */
+				    &qfr_rsp,
+				    &qfr_count);
+	torture_assert_ntstatus_ok(torture, status,
+				   "FSCTL_QUERY_FILE_REGIONS req failed");
+	if (qfr_count == 0) {
+		torture_comment(torture, "FS deallocated 4K chunk\n");
+	} else {
+		/* expect fully allocated */
+		torture_assert_u64_equal(torture, qfr_count, 1,
+					 "unexpected response len");
+		torture_assert_u64_equal(torture, qfr_rsp[0].file_off, 0, "qfr offset");
+		torture_assert_u64_equal(torture, qfr_rsp[0].len, 4096, "qfr len");
+	}
+
+	/*
+	 * Query range before and past write, it should be allocated up to the
+	 * end of the file size.
+	 */
+	status = test_ioctl_qfr_req(torture, tmp_ctx, tree, fh,
+				    0,	/* off */
+				    0x40000,	/* len */
+				    &qfr_rsp,
+				    &qfr_count);
+	torture_assert_ntstatus_ok(torture, status,
+				   "FSCTL_QUERY_FILE_REGIONS req failed");
+
+#if 0
+	torture_assert_u64_equal(torture, qfr_count, 2,
+				 "unexpected response len");
+	/* FS dependent */
+	if (qfr_rsp[0].file_off == 4096) {
+		/* 4K chunk unallocated */
+		torture_assert_u64_equal(torture, qfr_rsp[0].file_off, 4096, "qfr offset");
+		torture_assert_u64_equal(torture, qfr_rsp[0].len, 1024, "qfr len");
+	} else {
+		/* expect fully allocated */
+		torture_assert_u64_equal(torture, qfr_rsp[0].file_off, 0, "qfr offset");
+		torture_assert_u64_equal(torture, qfr_rsp[0].len, 5120, "qfr len");
+	}
+#endif
+
+	smb2_util_close(tree, fh);
+	talloc_free(tmp_ctx);
+	return true;
+}
+
+/* test QFR with multi-range responses */
+static bool test_ioctl_sparse_qfr_multi(struct torture_context *torture,
+					struct smb2_tree *tree)
+{
+	struct smb2_handle fh;
+	NTSTATUS status;
+	TALLOC_CTX *tmp_ctx = talloc_new(tree);
+	bool ok;
+	uint64_t dealloc_chunk_len = 64 * 1024;	/* Windows 2012 */
+	uint64_t this_off;
+	int i;
+	struct file_region_info *qfr_rsp = NULL;
+	uint32_t qfr_count = 0;
+
+	ok = test_setup_create_fill(torture, tree, tmp_ctx,
+				    FNAME, &fh, dealloc_chunk_len * 2,
+				    SEC_RIGHTS_FILE_ALL,
+				    FILE_ATTRIBUTE_NORMAL);
+	torture_assert(torture, ok, "setup file");
+
+	status = test_ioctl_fs_supported(torture, tree, tmp_ctx, &fh,
+					 FILE_SUPPORTS_SPARSE_FILES, &ok);
+	torture_assert_ntstatus_ok(torture, status, "SMB2_GETINFO_FS");
+	if (!ok) {
+		torture_skip(torture, "Sparse files not supported\n");
+		smb2_util_close(tree, fh);
+	}
+
+	status = test_ioctl_sparse_req(torture, tmp_ctx, tree, fh, true);
+	torture_assert_ntstatus_ok(torture, status, "FSCTL_SET_SPARSE");
+
+	/* each loop, write out two chunks and punch the first out */
+	for (i = 0; i < 10; i++) {
+		this_off = i * dealloc_chunk_len * 2;
+
+		ok = write_pattern(torture, tree, tmp_ctx, fh,
+				   this_off,			/* off */
+				   dealloc_chunk_len * 2,	/* len */
+				   this_off);		/* pattern offset */
+		torture_assert(torture, ok, "write pattern");
+
+		status = test_ioctl_zdata_req(torture, tmp_ctx, tree, fh,
+					      this_off,	/* off */
+					      this_off + dealloc_chunk_len);
+		torture_assert_ntstatus_ok(torture, status, "zero_data");
+	}
+
+	/* should now have one separate region for each iteration */
+	status = test_ioctl_qfr_req(torture, tmp_ctx, tree, fh,
+				    0,
+				    10 * dealloc_chunk_len * 2,
+				    &qfr_rsp, &qfr_count);
+	torture_assert_ntstatus_ok(torture, status,
+			"FSCTL_QUERY_FILE_REGIONS req failed");
+	if (qfr_count == 1) {
+		torture_comment(torture, "this FS doesn't deallocate 64K"
+				"zeroed ranges in sparse files\n");
+		return true;	/* FS specific, not a failure */
+	}
+	torture_assert_u64_equal(torture, qfr_count, 10,
+				 "unexpected response len");
+	for (i = 0; i < 10; i++) {
+		this_off = i * dealloc_chunk_len * 2;
+
+		torture_assert_u64_equal(torture, qfr_rsp[i].file_off,
+					 this_off + dealloc_chunk_len,
+					 "unexpected allocation");
+		torture_assert_u64_equal(torture, qfr_rsp[i].len,
+					 dealloc_chunk_len,
+					 "unexpected qfr len");
+	}
+
+	smb2_util_close(tree, fh);
+	talloc_free(tmp_ctx);
+	return true;
+}
+
+/* End new */
+
 static NTSTATUS test_ioctl_trim_supported(struct torture_context *torture,
 					  struct smb2_tree *tree,
 					  TALLOC_CTX *mem_ctx,
@@ -6799,6 +7067,12 @@ struct torture_suite *torture_smb2_ioctl_init(TALLOC_CTX *ctx)
 				     test_ioctl_sparse_qar_multi);
 	torture_suite_add_1smb2_test(suite, "sparse_qar_overflow",
 				     test_ioctl_sparse_qar_overflow);
+
+	torture_suite_add_1smb2_test(suite, "sparse_qfr",
+				     test_ioctl_sparse_qfr);
+	torture_suite_add_1smb2_test(suite, "sparse_qfr_multi",
+				     test_ioctl_sparse_qfr_multi);
+
 	torture_suite_add_1smb2_test(suite, "trim_simple",
 				     test_ioctl_trim_simple);
 	torture_suite_add_1smb2_test(suite, "dup_extents_simple",

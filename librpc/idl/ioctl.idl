@@ -188,6 +188,33 @@ interface sparse
 		[flag(NDR_REMAINING)] DATA_BLOB far_buf_array;
 	} fsctl_query_alloced_ranges_rsp;
 
+	/* 2.3.40.1 FILE_REGION_INFO */
+	typedef [public,bitmap32bit] bitmap {
+		FILE_REGION_USAGE_VALID_CACHED_DATA = 0x1,
+		FILE_REGION_USAGE_VALID_NONCACHED_DATA = 0x2
+	} region_usage_flags;
+
+	typedef [public] struct {
+		hyper file_off;
+		hyper len;
+		region_usage_flags usage;
+		uint32 reserved;
+	} file_region_info;
+
+	/* MS-FSCC 2.3.39 FSCTL_QUERY_FILE_REGIONS Request */
+	typedef [public] struct {
+		file_region_info req;
+	} fsctl_query_file_regions_req;
+
+	/* MS-FSCC 2.3.40 FSCTL_QUERY_FILE_REGIONS Reply */
+	typedef [public] struct {
+		uint32 flags;
+		uint32 tot_count;
+		uint32 ret_count;
+		uint32 reserved;
+		file_region_info regions[ret_count];
+	} fsctl_query_file_regions_rsp;
+
 	/* 2.3.65 FSCTL_SET_ZERO_DATA Request */
 	typedef [public] struct {
 		hyper file_off;
