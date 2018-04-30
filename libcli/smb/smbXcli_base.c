@@ -2871,6 +2871,20 @@ static void smb2cli_req_cancel_done(struct tevent_req *subreq)
 	TALLOC_FREE(subreq);
 }
 
+/*
+ * XXX: This is a temporary hack, for
+ * torture_smb2_notify_bad_cancel()
+ * Stuff in a bogus Message ID and turn off async.
+ */
+void smb2cli_req_hack_mid(struct tevent_req *req, uint64_t mid)
+{
+	struct smbXcli_req_state *state =
+		tevent_req_data(req,
+		struct smbXcli_req_state);
+	state->smb2.cancel_flags = 0;
+	state->smb2.cancel_mid = mid;
+}
+
 struct tevent_req *smb2cli_req_create(TALLOC_CTX *mem_ctx,
 				      struct tevent_context *ev,
 				      struct smbXcli_conn *conn,

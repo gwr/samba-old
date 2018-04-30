@@ -2355,6 +2355,80 @@ static bool torture_smb2_notify_rmdir4(struct torture_context *torture,
 }
 
 /*
+ * Testing Notify with a bad cancel ID
+ * XXX This is a complete hack...
+ */
+void smb2cli_req_hack_mid(struct tevent_req *req, uint64_t mid);
+
+static bool torture_smb2_notify_bad_cancel(
+		struct torture_context *torture,
+		struct smb2_tree *tree)
+{
+	bool ret = true;
+	NTSTATUS status;
+	union smb_notify notify;
+	union smb_open io;
+	struct smb2_handle h1;
+	struct smb2_request *req;
+	static uint64_t badmid = 0x0BAD1BAD2BAD3BAD;
+
+	smb2_deltree(tree, BASEDIR);
+	smb2_util_rmdir(tree, BASEDIR);
+
+	torture_comment(torture, "TESTING CHANGE NOTIFY+ BAD CANCEL\n");
+
+	/*
+	  get a handle on the directory
+	*/
+	ZERO_STRUCT(io.smb2);
+	io.generic.level = RAW_OPEN_SMB2;
+	io.smb2.in.create_flags = 0;
+	io.smb2.in.desired_access = SEC_FILE_ALL;
+	io.smb2.in.create_options = NTCREATEX_OPTIONS_DIRECTORY;
+	io.smb2.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.smb2.in.share_access = NTCREATEX_SHARE_ACCESS_READ |
+				NTCREATEX_SHARE_ACCESS_WRITE;
+	io.smb2.in.alloc_size = 0;
+	io.smb2.in.create_disposition = NTCREATEX_DISP_CREATE;
+	io.smb2.in.impersonation_level = SMB2_IMPERSONATION_ANONYMOUS;
+	io.smb2.in.security_flags = 0;
+	io.smb2.in.fname = BASEDIR;
+
+	status = smb2_create(tree, torture, &(io.smb2));
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h1 = io.smb2.out.file.handle;
+
+	/* ask for a change notify,
+	   on file or directory name changes */
+	ZERO_STRUCT(notify.smb2);
+	notify.smb2.level = RAW_NOTIFY_SMB2;
+	notify.smb2.in.buffer_size = 1000;
+	notify.smb2.in.completion_filter = FILE_NOTIFY_CHANGE_NAME;
+	notify.smb2.in.file.handle = h1;
+	notify.smb2.in.recursive = true;
+
+	req = smb2_notify_send(tree, &(notify.smb2));
+	WAIT_FOR_ASYNC_RESPONSE(req);
+
+	smb2cli_req_hack_mid(req->subreq, badmid);
+	smb2_cancel(req);
+
+	smb_msleep(200);
+	status = smb2_tdis(tree);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	req = smb2_notify_send(tree, &(notify.smb2));
+
+	smb2_notify_recv(req, torture, &(notify.smb2));
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_VAL(notify.smb2.out.num_changes, 0);
+
+done:
+	smb2_deltree(tree, BASEDIR);
+	return ret;
+}
+
+/*
    basic testing of SMB2 change notify
 */
 struct torture_suite *torture_smb2_notify_init(TALLOC_CTX *ctx)
@@ -2387,6 +2461,8 @@ struct torture_suite *torture_smb2_notify_init(TALLOC_CTX *ctx)
 				     torture_smb2_notify_rmdir3);
 	torture_suite_add_2smb2_test(suite, "rmdir4",
 				     torture_smb2_notify_rmdir4);
+	torture_suite_add_1smb2_test(suite, "bad-cancel",
+		 torture_smb2_notify_bad_cancel);
 
 	suite->description = talloc_strdup(suite, "SMB2-NOTIFY tests");
 
