@@ -87,6 +87,7 @@ static NTSTATUS smb2_create_complex(struct torture_context *tctx,
 		io.in.create_disposition = NTCREATEX_DISP_CREATE;
 	}
 
+#if 0	/* XXX */
 	/* it seems vista is now fussier about alignment? */
 	if (strchr(fname, ':') == NULL) {
 		/* setup some EAs */
@@ -99,6 +100,7 @@ static NTSTATUS smb2_create_complex(struct torture_context *tctx,
 		io.in.eas.eas[1].name.s = "SECONDEA";
 		io.in.eas.eas[1].value = data_blob_talloc(tmp_ctx, "ValueTwo", 8);
 	}
+#endif
 
 	status = smb2_create(tree, tmp_ctx, &io);
 	talloc_free(tmp_ctx);

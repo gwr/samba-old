@@ -2328,6 +2328,92 @@ done:
 	return ret;
 }
 
+
+/*
+   testing of close with simultaneous event
+*/
+static bool torture_smb2_notify_close_race(struct torture_context *torture,
+			      struct smb2_tree *tree1,
+			      struct smb2_tree *tree2)
+{
+	bool ret = true;
+	NTSTATUS status;
+	union smb_notify notify;
+	union smb_open io;
+	union smb_close cl;
+	struct smb2_handle h1 = {{0}};
+	struct smb2_request *req, *req2;
+	const char *fname = BASEDIR "\\subdir-name";
+	extern int torture_numops;
+
+	torture_comment(torture, "TESTING CHANGE NOTIFY CLOSE RACE\n");
+
+	smb2_deltree(tree1, BASEDIR);
+	smb2_util_rmdir(tree1, BASEDIR);
+	/*
+	  get a handle on the directory
+	*/
+	ZERO_STRUCT(io.smb2);
+	io.generic.level = RAW_OPEN_SMB2;
+	io.smb2.in.create_flags = 0;
+	io.smb2.in.desired_access = SEC_FILE_ALL;
+	io.smb2.in.create_options = NTCREATEX_OPTIONS_DIRECTORY;
+	io.smb2.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.smb2.in.share_access = NTCREATEX_SHARE_ACCESS_READ |
+				NTCREATEX_SHARE_ACCESS_WRITE;
+	io.smb2.in.alloc_size = 0;
+	io.smb2.in.create_disposition = NTCREATEX_DISP_CREATE;
+	io.smb2.in.impersonation_level = SMB2_IMPERSONATION_ANONYMOUS;
+	io.smb2.in.security_flags = 0;
+	io.smb2.in.fname = BASEDIR;
+
+	status = smb2_create(tree1, torture, &(io.smb2));
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h1 = io.smb2.out.file.handle;
+
+	/* ask for a change notify,
+	   on file or directory name changes */
+	ZERO_STRUCT(notify.smb2);
+	notify.smb2.level = RAW_NOTIFY_SMB2;
+	notify.smb2.in.buffer_size = 1000;
+	notify.smb2.in.completion_filter = FILE_NOTIFY_CHANGE_NAME;
+	notify.smb2.in.file.handle = h1;
+	notify.smb2.in.recursive = true;
+
+	torture_comment(torture,
+	"Testing close() on the dir with racing event\n");
+
+	notify.smb2.in.file.handle = h1;
+	req = smb2_notify_send(tree1, &(notify.smb2));
+
+	ZERO_STRUCT(cl.smb2);
+	cl.smb2.level = RAW_CLOSE_SMB2;
+	cl.smb2.in.file.handle = h1;
+	req2 = smb2_close_send(tree1, &(cl.smb2));
+
+	/* Wait for the send to complete? */
+#if 1
+	while (!req2->cancel.can_cancel && req2->state <= SMB2_REQUEST_RECV) {
+		if (tevent_loop_once(torture->ev) != 0) {
+			break;
+		}
+	}
+#endif
+	smb2_util_mkdir(tree2, fname);
+	
+	status = smb2_close_recv(req2, &(cl.smb2));
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	status = smb2_notify_recv(req, torture, &(notify.smb2));
+	CHECK_STATUS(status, STATUS_NOTIFY_CLEANUP);
+	/* CHECK_VAL(notify.smb2.out.num_changes, 9); */
+
+done:
+	smb2_util_close(tree1, h1);
+	smb2_deltree(tree1, BASEDIR);
+	return ret;
+}
+
 static bool torture_smb2_notify_rmdir1(struct torture_context *torture,
 				       struct smb2_tree *tree)
 {
@@ -2443,6 +2529,7 @@ struct torture_suite *torture_smb2_notify_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "tdis1", torture_smb2_notify_tree_disconnect_1);
 	torture_suite_add_2smb2_test(suite, "mask-change", torture_smb2_notify_mask_change);
 	torture_suite_add_1smb2_test(suite, "close", torture_smb2_notify_close);
+	torture_suite_add_2smb2_test(suite, "close_race", torture_smb2_notify_close_race);
 	torture_suite_add_1smb2_test(suite, "logoff", torture_smb2_notify_ulogoff);
 	torture_suite_add_1smb2_test(suite, "session-reconnect", torture_smb2_notify_session_reconnect);
 	torture_suite_add_2smb2_test(suite, "invalid-reauth", torture_smb2_notify_invalid_reauth);
