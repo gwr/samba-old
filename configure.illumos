@@ -1,0 +1,15 @@
+#!/bin/sh
+
+WAF=./buildtools/bin/waf
+export JOBS=1
+
+export CFLAGS='-std=c99 -D__EXTENSIONS__=1'
+export LINKFLAGS='-R/usr/local/samba -R/usr/local/samba/private -lrt -lsec -lcrypt -lmd5 -lsocket -lnsl -lsendfile -L/usr/gnu/lib -R/usr/gnu/lib'
+$WAF configure -C \
+	--prefix=/usr/local/samba \
+	--enable-developer \
+	--disable-avahi \
+	--without-ad-dc \
+	--abi-check-disable \
+	--bundled-libraries=ALL \
+	"$@"
