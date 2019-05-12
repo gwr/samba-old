@@ -1,0 +1,20 @@
+#!/bin/sh
+
+WAF=./buildtools/bin/waf
+export JOBS=1
+
+export CC=gcc
+export CFLAGS='-std=c99 -D__EXTENSIONS__=1'
+export LINKFLAGS='-R/usr/local/samba/lib -R/usr/local/samba/lib/private -lrt -lsec -lcrypt -lmd5 -lsocket -lnsl -lsendfile -L/usr/gnu/lib -R/usr/gnu/lib'
+$WAF configure -C \
+	--prefix=/usr/local/samba \
+	--enable-developer \
+	--disable-avahi \
+	--disable-rpath \
+	--nopyo --nopycache \
+	--python=/usr/bin/python3.4 \
+	--without-ad-dc \
+	--without-pam \
+	--abi-check-disable \
+	--bundled-libraries=ALL \
+	"$@"
