@@ -511,6 +511,74 @@ static bool run_tcon_test(struct torture_context *tctx, struct smbcli_state *cli
 }
 
 /**
+  this checks to see if a secondary tconx can use open files from an
+  earlier tconx
+ */
+static bool run_tcondis_test(struct torture_context *tctx, struct smbcli_state *cli)
+{
+	union smb_tcon tcon;
+	const char *fname = "\\tcondis.tmp";
+	int fnum1;
+	uint16_t cnum1, cnum2, cnum3;
+	uint16_t vuid1, vuid2;
+	uint8_t buf[4];
+	bool ret = true;
+	struct smbcli_tree *tree1;
+	NTSTATUS status;
+	const char *host = torture_setting_string(tctx, "host", NULL);
+	const char *share = torture_setting_string(tctx, "share", NULL);
+	const char *password = torture_setting_string(tctx, "password", NULL);
+
+	if (smbcli_deltree(cli->tree, fname) == -1) {
+		torture_comment(tctx, "unlink of %s failed (%s)\n", fname, smbcli_errstr(cli->tree));
+	}
+
+	fnum1 = smbcli_open(cli->tree, fname, O_RDWR|O_CREAT|O_EXCL, DENY_NONE);
+	if (fnum1 == -1) {
+		torture_result(tctx, TORTURE_FAIL, "open of %s failed (%s)\n", fname, smbcli_errstr(cli->tree));
+		return false;
+	}
+
+	cnum1 = cli->tree->tid;
+	vuid1 = cli->session->vuid;
+
+	memset(buf, 0, 4); /* init buf so valgrind won't complain */
+	if (smbcli_write(cli->tree, fnum1, 0, buf, 130, 4) != 4) {
+		torture_result(tctx, TORTURE_FAIL, "initial write failed (%s)\n", smbcli_errstr(cli->tree));
+		return false;
+	}
+
+	tree1 = cli->tree;	/* save old tree connection */
+
+	/*
+	 * Custom variant of smbcli_tconX here so we can pass
+	 * TCONX_FLAG_DISCONNECT_TID
+	 */
+	tcon.generic.level = RAW_TCON_TCONX;
+	tcon.tconx.in.flags = TCONX_FLAG_DISCONNECT_TID |
+		TCONX_FLAG_EXTENDED_RESPONSE;
+	tcon.tconx.in.password = data_blob(NULL, 0);
+	tcon.tconx.in.path = share;
+	tcon.tconx.in.device = "?????";
+
+	status = smb_raw_tcon(cli->tree, tctx, &tcon);
+
+	if (NT_STATUS_IS_ERR(status)) {
+		torture_result(tctx, TORTURE_FAIL, "%s refused 2nd tree connect (%s)\n", host,
+		           smbcli_errstr(cli->tree));
+		talloc_free(cli);
+		return false;
+	}
+
+	cli->tree = tree1;  /* restore initial tree */
+	cli->tree->tid = cnum1;
+
+	smbcli_unlink(tree1, fname);
+
+	return ret;
+}
+
+/**
  checks for correct tconX support
  */
 static bool run_tcon_devtype_test(struct torture_context *tctx, 
@@ -1955,6 +2023,7 @@ NTSTATUS torture_base_init(TALLOC_CTX *ctx)
 	torture_suite_add_smb_multi_test(suite, "ntdeny1", torture_ntdenytest1);
 	torture_suite_add_2smb_test(suite, "ntdeny2",  torture_ntdenytest2);
 	torture_suite_add_1smb_test(suite, "tcon",  run_tcon_test);
+	torture_suite_add_1smb_test(suite, "tcondis",  run_tcondis_test);
 	torture_suite_add_1smb_test(suite, "tcondev",  run_tcon_devtype_test);
 	torture_suite_add_1smb_test(suite, "vuid", run_vuidtest);
 	torture_suite_add_2smb_test(suite, "rw1",  run_readwritetest);
