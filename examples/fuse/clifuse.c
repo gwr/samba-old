@@ -1178,7 +1178,7 @@ static void cli_ll_opendir_done(struct tevent_req *req)
 		return;
 	}
 
-	state->fi.fh = (uint64_t)talloc_move(state->mstate, &state->dir_state);
+	state->fi.fh = (uintptr_t)talloc_move(state->mstate, &state->dir_state);
 	state->fi.direct_io = 0;
 	state->fi.keep_cache = 0;
 
@@ -1211,7 +1211,7 @@ static void cli_ll_readdir(fuse_req_t freq, fuse_ino_t ino, size_t size,
 	DBG_DEBUG("ino=%ju, size=%zu, off=%ju\n", (uintmax_t)ino, size,
 		  (uintmax_t)off);
 
-	dir_state = talloc_get_type_abort((void *)fi->fh, struct ll_dir_state);
+	dir_state = talloc_get_type_abort((void *)(uintptr_t)fi->fh, struct ll_dir_state);
 
 	if (dir_state->finfos != NULL) {
 		DBG_DEBUG("finfos=%p\n", dir_state->finfos);
@@ -1341,7 +1341,7 @@ static void cli_ll_releasedir(fuse_req_t freq, fuse_ino_t ino,
 	state->freq = freq;
 
 	state->dir_state = talloc_get_type_abort(
-		(void *)fi->fh, struct ll_dir_state);
+		(void *)(uintptr_t)fi->fh, struct ll_dir_state);
 
 	req = smb2cli_close_send(state, mstate->ev, cli->conn, cli->timeout,
 				 cli->smb2.session, cli->smb2.tcon, 0,
