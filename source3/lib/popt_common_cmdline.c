@@ -37,6 +37,9 @@
 #include "auth_info.h"
 #include "cmdline_contexts.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 static struct user_auth_info *cmdline_auth_info;
 
 struct user_auth_info *popt_get_cmdline_auth_info(void)

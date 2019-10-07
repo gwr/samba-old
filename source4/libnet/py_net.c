@@ -38,6 +38,9 @@
 #include "librpc/rpc/pyrpc_util.h"
 #include "libcli/drsuapi/drsuapi.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 static void PyErr_SetDsExtendedError(enum drsuapi_DsExtendedError ext_err, const char *error_description)
 {
 	PyObject *error = PyObject_GetAttrString(PyImport_ImportModule("samba"),

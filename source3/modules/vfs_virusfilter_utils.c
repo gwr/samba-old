@@ -26,6 +26,9 @@ struct iovec;
 #include <tevent.h>
 #include "lib/tsocket/tsocket.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 int virusfilter_debug_class = DBGC_VFS;
 
 /* ====================================================================== */

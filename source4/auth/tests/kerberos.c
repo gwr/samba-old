@@ -15,6 +15,9 @@
 #include "auth/kerberos/kerberos_credentials.h"
 #include "auth/kerberos/kerberos_util.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 static void internal_obsolete_keytab_test(int num_principals, int num_kvnos,
 					  krb5_kvno kvno, const char *kt_name)
 {

@@ -39,6 +39,9 @@
 #include "libcli/security/security_descriptor.h"
 #include "librpc/rpc/pyrpc_util.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 static PyTypeObject PySMB;
 
 void initsmb(void);
