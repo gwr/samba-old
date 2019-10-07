@@ -416,7 +416,7 @@ static NTSTATUS nfs4acl_xattr_fset_nt_acl(vfs_handle_struct *handle,
 		}
 		if (ret != 0) {
 			DBG_ERR("Resetting POSIX mode on [%s] from [0%o]: %s\n",
-				fsp_str_dbg(fsp), existing_mode,
+				fsp_str_dbg(fsp), (uint_t)existing_mode,
 				strerror(errno));
 			return map_nt_error_from_unix(errno);
 		}

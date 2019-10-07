@@ -1508,7 +1508,7 @@ static int smb_full_audit_chmod(vfs_handle_struct *handle,
 
 	do_log(SMB_VFS_OP_CHMOD, (result >= 0), handle, "%s|%o",
 		smb_fname->base_name,
-		mode);
+		(uint_t)mode);
 
 	return result;
 }
@@ -1521,7 +1521,7 @@ static int smb_full_audit_fchmod(vfs_handle_struct *handle, files_struct *fsp,
 	result = SMB_VFS_NEXT_FCHMOD(handle, fsp, mode);
 
 	do_log(SMB_VFS_OP_FCHMOD, (result >= 0), handle,
-	       "%s|%o", fsp_str_do_log(fsp), mode);
+	       "%s|%o", fsp_str_do_log(fsp), (uint_t)mode);
 
 	return result;
 }
