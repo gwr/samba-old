@@ -637,8 +637,10 @@ static nss_backend_op_t ipnodes_ops[] = {
 };
 
 nss_backend_t *
-_nss_winbind_ipnodes_constr(dummy1, dummy2, dummy3)
-        const char      *dummy1, *dummy2, *dummy3;
+_nss_winbind_ipnodes_constr(
+        const char      *dummy1,
+        const char      *dummy2,
+        const char      *dummy3)
 {
 	return (_nss_winbind_common_constr(ipnodes_ops,
 		sizeof (ipnodes_ops) / sizeof (ipnodes_ops[0])));
@@ -654,8 +656,10 @@ static nss_backend_op_t host_ops[] = {
 };
 
 nss_backend_t *
-_nss_winbind_hosts_constr(dummy1, dummy2, dummy3)
-        const char      *dummy1, *dummy2, *dummy3;
+_nss_winbind_hosts_constr(
+        const char      *dummy1,
+        const char      *dummy2,
+        const char      *dummy3)
 {
 	return (_nss_winbind_common_constr(host_ops,
 		sizeof (host_ops) / sizeof (host_ops[0])));
