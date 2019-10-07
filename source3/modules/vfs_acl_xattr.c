@@ -247,7 +247,7 @@ static int connect_acl_xattr(struct vfs_handle_struct *handle,
 		if ((create_mask & 0666) != 0666) {
 			create_mask |= 0666;
 			create_mask_str = talloc_asprintf(handle, "0%o",
-							  create_mask);
+							(uint_t)create_mask);
 			if (create_mask_str == NULL) {
 				DBG_ERR("talloc_asprintf failed\n");
 				return -1;
