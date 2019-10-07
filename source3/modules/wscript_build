@@ -248,12 +248,12 @@ xdr_buf_hack = 'sed -e "s@^\([ \t]*register int32_t \*buf\);@\\1 = buf;@"'
 bld.SAMBA_GENERATOR('nfs41acl-xdr-c',
                     source='nfs41acl.x',
                     target='nfs41acl_xdr.c',
-                    rule='rpcgen -c ${SRC} | ' + xdr_buf_hack + ' > ${TGT}')
+                    rule='rpcgen -C -c ${SRC} | ' + xdr_buf_hack + ' > ${TGT}')
 
 bld.SAMBA_GENERATOR('nfs41acl-h',
                     source='nfs41acl.x',
                     target='nfs41acl.h',
-                    rule='rpcgen -h ${SRC} > ${TGT}')
+                    rule='rpcgen -C -h ${SRC} > ${TGT}')
 
 vfs_nfs4acl_xattr_source = '''
                            vfs_nfs4acl_xattr.c
