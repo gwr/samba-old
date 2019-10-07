@@ -1378,8 +1378,8 @@ static int ldb_kv_start_trans(struct ldb_module *module)
 				       __location__
 				       ": Reusing ldb opend by pid %d in "
 				       "process %d\n",
-				       ldb_kv->pid,
-				       pid);
+				       (int)ldb_kv->pid,
+				       (int)pid);
 		return LDB_ERR_PROTOCOL_ERROR;
 	}
 
@@ -1418,8 +1418,8 @@ static int ldb_kv_prepare_commit(struct ldb_module *module)
 				       __location__
 				       ": Reusing ldb opend by pid %d in "
 				       "process %d\n",
-				       ldb_kv->pid,
-				       pid);
+				       (int)ldb_kv->pid,
+				       (int)pid);
 		return LDB_ERR_PROTOCOL_ERROR;
 	}
 
