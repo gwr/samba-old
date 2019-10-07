@@ -34,6 +34,9 @@
 #include "pyldb.h"
 #include "dlinklist.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 struct py_ldb_search_iterator_reply;
 
 typedef struct {

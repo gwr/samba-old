@@ -29,6 +29,9 @@
 #include "auth/credentials/pycredentials.h"
 #include "auth/gensec/gensec.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 void initbase(void);
 
 static PyTypeObject dcerpc_InterfaceType;

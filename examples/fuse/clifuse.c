@@ -32,6 +32,9 @@
 #include "libcli/security/security.h"
 #include "clifuse.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 struct mount_state {
 	struct tevent_context *ev;
 	struct cli_state *cli;

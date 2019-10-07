@@ -33,6 +33,9 @@
 #include "lib/dbwrap/dbwrap_tdb.h"
 #include "source3/lib/xattr_tdb.h"
 
+// XXX Nothing included string.h?
+extern int memset_s(void *, size_t, int, size_t);
+
 static PyObject *py_is_xattr_supported(PyObject *self)
 {
 	return Py_True;
