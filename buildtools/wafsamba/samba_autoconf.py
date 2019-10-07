@@ -759,7 +759,9 @@ def SAMBA_CONFIG_H(conf, path=None):
 
         conf.ADD_CFLAGS('-Wformat=2 -Wno-format-y2k', testflags=True)
         conf.ADD_CFLAGS('-Wno-format-zero-length', testflags=True)
-        conf.ADD_CFLAGS('-Werror=format-security -Wformat-security',
+        # Note:  -Wno-format-security runs into errors in heimdal
+        # due to the N_() macro in krb5_locl.h
+        conf.ADD_CFLAGS('-Wformat-security',
                         testflags=True, prereq_flags='-Wformat')
         # This check is because for ldb_search(), a NULL format string
         # is not an error, but some compilers complain about that.
