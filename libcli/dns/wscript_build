@@ -5,10 +5,11 @@ bld.SAMBA_LIBRARY('clidns',
         public_deps='LIBTSOCKET tevent-util ndr-standard',
         private_library=True)
 
-bld.SAMBA_BINARY('resolvconftest',
-                  source='resolvconftest.c',
-                  deps='clidns',
-                  install=False)
+# Needs fmemopen, not on illumos (yet)
+#bld.SAMBA_BINARY('resolvconftest',
+#                  source='resolvconftest.c',
+#                  deps='clidns',
+#                  install=False)
 
 bld.SAMBA_SUBSYSTEM('dns_lookup',
                     source='dns_lookup.c',
