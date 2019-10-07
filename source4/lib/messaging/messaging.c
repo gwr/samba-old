@@ -324,7 +324,7 @@ NTSTATUS imessaging_process_cleanup(
 
 	if (mem_ctx == NULL) {
 		DBG_ERR("OOM unable to clean up messaging for process (%d)\n",
-			pid);
+			(int)pid);
 		return NT_STATUS_NO_MEMORY;
 	}
 

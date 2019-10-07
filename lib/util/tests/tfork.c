@@ -48,7 +48,7 @@ static bool test_tfork_simple(struct torture_context *tctx)
         }
         child = tfork_child_pid(t);
         if (child == 0) {
-                torture_comment(tctx, "my parent pid is %d\n", parent);
+                torture_comment(tctx, "my parent pid is %d\n", (int)parent);
                 torture_assert(tctx, getpid() != parent, "tfork failed\n");
                 _exit(0);
         }
@@ -227,7 +227,7 @@ static bool test_tfork_process_hierarchy(struct torture_context *tctx)
 	int ret;
 	bool ok = true;
 
-	procpath = talloc_asprintf(tctx, "/proc/%d/status", getpid());
+	procpath = talloc_asprintf(tctx, "/proc/%d/status", (int)getpid());
 	torture_assert_not_null(tctx, procpath, "talloc_asprintf failed\n");
 
 	ret = stat(procpath, &st);
@@ -250,12 +250,12 @@ static bool test_tfork_process_hierarchy(struct torture_context *tctx)
 		FILE *fp = NULL;
 		char line[64];
 		char *p;
-		pid_t ppid;
+		int ppid;
 
 		torture_assert_goto(tctx, pgid == getpgid(0), ok, child_fail, "tfork failed\n");
 		torture_assert_goto(tctx, sid == getsid(0), ok, child_fail, "tfork failed\n");
 
-		cmd = talloc_asprintf(tctx, "cat /proc/%d/status | awk '/^PPid:/ {print $2}'", getppid());
+		cmd = talloc_asprintf(tctx, "cat /proc/%d/status | awk '/^PPid:/ {print $2}'", (int)getppid());
 		torture_assert_goto(tctx, cmd != NULL, ok, child_fail, "talloc_asprintf failed\n");
 
 		fp = popen(cmd, "r");

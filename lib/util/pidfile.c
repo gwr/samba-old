@@ -77,7 +77,7 @@ int pidfile_path_create(const char *path, int *outfd)
 		goto fail_unlink;
 	}
 
-	len = snprintf(tmp, sizeof(tmp), "%u\n", pid);
+	len = snprintf(tmp, sizeof(tmp), "%u\n", (unsigned int)pid);
 	if (len < 0) {
 		ret = errno;
 		goto fail_unlink;

@@ -71,8 +71,8 @@ static int ltdb_lock_read(struct ldb_module *module)
 				       __location__
 				       ": Reusing ldb opend by pid %d in "
 				       "process %d\n",
-				       ldb_kv->pid,
-				       pid);
+				       (int)ldb_kv->pid,
+				       (int)pid);
 		return LDB_ERR_PROTOCOL_ERROR;
 	}
 
@@ -111,8 +111,8 @@ static int ltdb_unlock_read(struct ldb_module *module)
 				       __location__
 				       ": Reusing ldb opend by pid %d in "
 				       "process %d\n",
-				       ldb_kv->pid,
-				       pid);
+				       (int)ldb_kv->pid,
+				       (int)pid);
 		return LDB_ERR_PROTOCOL_ERROR;
 	}
 	if (!tdb_transaction_active(ldb_kv->tdb) &&
@@ -177,8 +177,8 @@ static int ltdb_transaction_start(struct ldb_kv_private *ldb_kv)
 				       __location__
 				       ": Reusing ldb opend by pid %d in "
 				       "process %d\n",
-				       ldb_kv->pid,
-				       pid);
+				       (int)ldb_kv->pid,
+				       (int)pid);
 		return LDB_ERR_PROTOCOL_ERROR;
 	}
 
@@ -194,8 +194,8 @@ static int ltdb_transaction_cancel(struct ldb_kv_private *ldb_kv)
 				       __location__
 				       ": Reusing ldb opend by pid %d in "
 				       "process %d\n",
-				       ldb_kv->pid,
-				       pid);
+				       (int)ldb_kv->pid,
+				       (int)pid);
 		return LDB_ERR_PROTOCOL_ERROR;
 	}
 
@@ -211,8 +211,8 @@ static int ltdb_transaction_prepare_commit(struct ldb_kv_private *ldb_kv)
 				       __location__
 				       ": Reusing ldb opend by pid %d in "
 				       "process %d\n",
-				       ldb_kv->pid,
-				       pid);
+				       (int)ldb_kv->pid,
+				       (int)pid);
 		return LDB_ERR_PROTOCOL_ERROR;
 	}
 
@@ -228,8 +228,8 @@ static int ltdb_transaction_commit(struct ldb_kv_private *ldb_kv)
 				       __location__
 				       ": Reusing ldb opend by pid %d in "
 				       "process %d\n",
-				       ldb_kv->pid,
-				       pid);
+				       (int)ldb_kv->pid,
+				       (int)pid);
 		return LDB_ERR_PROTOCOL_ERROR;
 	}
 

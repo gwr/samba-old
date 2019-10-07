@@ -270,7 +270,7 @@ bool run_messaging_send_all(int dummy)
 		} while ((child == -1) && (errno == EINTR));
 
 		if (child != children[i]) {
-			printf("waitpid(%d) failed\n", children[i]);
+			printf("waitpid(%d) failed\n", (int)children[i]);
 			return false;
 		}
 	}
