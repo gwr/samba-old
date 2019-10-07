@@ -15,7 +15,8 @@
 #include <sys/ioctl.h>
 #endif
 
-#define	POPT_WCHAR_HACK
+// Don't have mbsrtowcs on illumos
+// #define	POPT_WCHAR_HACK
 #ifdef 	POPT_WCHAR_HACK
 #include <wchar.h>			/* for mbsrtowcs */
 /*@access mbstate_t @*/
