@@ -587,6 +587,9 @@ int tdb_mutex_init(struct tdb_context *tdb)
 	for (i=0; i<tdb->hash_size+1; i++) {
 		pthread_mutex_t *chain = &m->hashchains[i];
 
+#ifdef	__sun
+		(void) memset(chain, 0, sizeof(*chain));
+#endif
 		ret = pthread_mutex_init(chain, &ma);
 		if (ret != 0) {
 			goto fail;
@@ -595,6 +598,9 @@ int tdb_mutex_init(struct tdb_context *tdb)
 
 	m->allrecord_lock = F_UNLCK;
 
+#ifdef	__sun
+	(void) memset(&m->allrecord_mutex, 0, sizeof(pthread_mutex_t));
+#endif
 	ret = pthread_mutex_init(&m->allrecord_mutex, &ma);
 	if (ret != 0) {
 		goto fail;
@@ -688,6 +694,9 @@ static bool tdb_mutex_locking_supported(void)
 	if (ret != 0) {
 		goto cleanup_ma;
 	}
+#ifdef	__sun
+	(void) memset(&m, 0, sizeof(m));
+#endif
 	ret = pthread_mutex_init(&m, &ma);
 	if (ret != 0) {
 		goto cleanup_ma;
@@ -885,6 +894,9 @@ _PUBLIC_ bool tdb_runtime_check_for_robust_mutexes(void)
 	if (ret != 0) {
 		goto cleanup;
 	}
+#ifdef	__sun
+	(void) memset(ptr, 0, sizeof(pthread_mutex_t));
+#endif
 	ret = pthread_mutex_init(ptr, &ma);
 	if (ret != 0) {
 		goto cleanup;
