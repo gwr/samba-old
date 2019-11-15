@@ -954,6 +954,74 @@ done:
 	return ret;
 }
 
+static bool test_lease_statopen4(struct torture_context *tctx,
+				   struct smb2_tree *tree)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	struct smb2_create io;
+	struct smb2_create io2;
+	struct smb2_lease ls;
+	struct smb2_handle h1 = {{0}};
+	struct smb2_handle h2 = {{0}};
+	struct smb2_handle h3 = {{0}};
+	NTSTATUS status;
+	const char *fname = "lease_statopen4.dat";
+	bool ret = true;
+	uint32_t caps;
+
+	caps = smb2cli_conn_server_capabilities(
+		tree->session->transport->conn);
+	if (!(caps & SMB2_CAP_LEASING)) {
+		torture_skip(tctx, "leases are not supported");
+	}
+
+	smb2_util_unlink(tree, fname);
+
+	/* Create file. */
+	smb2_lease_create(&io, &ls, false, fname, LEASE1,
+			  smb2_util_lease_state("RWH"));
+	status = smb2_create(tree, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h1 = io.out.file.handle;
+	CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+	CHECK_LEASE(&io, "RWH", true, LEASE1, 0);
+	smb2_util_close(tree, h1);
+
+	/* Stat open file with RWH lease. */
+	smb2_lease_create_share(&io, &ls, false, fname, 0, LEASE1,
+			  smb2_util_lease_state("RWH"));
+	io.in.desired_access = FILE_READ_ATTRIBUTES;
+	status = smb2_create(tree, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h2 = io.out.file.handle;
+	CHECK_LEASE(&io, "RWH", true, LEASE1, 0);
+
+	ZERO_STRUCT(lease_break_info);
+
+	tree->session->transport->lease.handler	= torture_lease_handler;
+	tree->session->transport->lease.private_data = tree;
+
+	/* Ensure stat_EA open (no lease) doesn't break */
+	smb2_generic_create(&io2, NULL, false, fname,
+	    NTCREATEX_DISP_OPEN, smb2_util_oplock_level(""), 0, 0);
+	io2.in.desired_access = FILE_READ_EA;
+	status = smb2_create(tree, mem_ctx, &io2);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h3 = io.out.file.handle;
+	CHECK_CREATED(&io, EXISTED, FILE_ATTRIBUTE_ARCHIVE);
+
+	CHECK_BREAK_INFO("RWH", "RH", LEASE1);
+	smb2_util_close(tree, h1);
+
+done:
+	smb2_util_close(tree, h3);
+	smb2_util_close(tree, h2);
+	smb2_util_close(tree, h1);
+	smb2_util_unlink(tree, fname);
+	talloc_free(mem_ctx);
+	return ret;
+}
+
 static void torture_oplock_break_callback(struct smb2_request *req)
 {
 	NTSTATUS status;
@@ -3980,6 +4048,7 @@ struct torture_suite *torture_smb2_lease_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "statopen", test_lease_statopen);
 	torture_suite_add_1smb2_test(suite, "statopen2", test_lease_statopen2);
 	torture_suite_add_1smb2_test(suite, "statopen3", test_lease_statopen3);
+	torture_suite_add_1smb2_test(suite, "statopen4", test_lease_statopen4);
 	torture_suite_add_1smb2_test(suite, "upgrade", test_lease_upgrade);
 	torture_suite_add_1smb2_test(suite, "upgrade2", test_lease_upgrade2);
 	torture_suite_add_1smb2_test(suite, "upgrade3", test_lease_upgrade3);
