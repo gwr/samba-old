@@ -615,6 +615,47 @@ static bool torture_smb2_qfs_buffercheck(struct torture_context *tctx)
 	return true;
 }
 
+/*
+ * Simulate how Windows 10 does QFS info when caching is disabled.
+ * It uses output buffer size 24 bytes and requires that returned.
+ */
+static bool torture_smb2_qfs1_buffer24(struct torture_context *tctx)
+{
+	bool ret;
+	struct smb2_tree *tree;
+	NTSTATUS status;
+	struct smb2_handle handle;
+
+	torture_comment(tctx, "Testing SMB2_GETINFO_FS(1) truncate\n");
+
+	ret = torture_smb2_connection(tctx, &tree);
+	torture_assert(tctx, ret, "connection failed");
+
+	status = smb2_util_roothandle(tree, &handle);
+	torture_assert_ntstatus_ok(
+		tctx, status, "Unable to create root handle");
+
+	{
+		struct smb2_getinfo b;
+
+		ZERO_STRUCT(b);
+		b.in.info_type			= SMB2_GETINFO_FS;
+		b.in.info_class			= 1;
+		b.in.file.handle		= handle;
+		b.in.output_buffer_length	= 24;
+
+		status = smb2_getinfo(tree, tctx, &b);
+
+		torture_assert_ntstatus_equal(
+			tctx, status, NT_STATUS_BUFFER_OVERFLOW,
+			"Wrong error code for large buffer");
+		torture_assert(tctx, b.out.blob.length == 24, "output length not 24?");
+
+	}
+
+	return true;
+}
+
 static bool torture_smb2_qfile_buffercheck(struct torture_context *tctx)
 {
 	bool ret;
@@ -792,6 +833,8 @@ struct torture_suite *torture_smb2_getinfo_init(TALLOC_CTX *ctx)
 	torture_suite_add_simple_test(suite, "fsinfo",  torture_smb2_fsinfo);
 	torture_suite_add_simple_test(suite, "qfs_buffercheck",
 				      torture_smb2_qfs_buffercheck);
+	torture_suite_add_simple_test(suite, "qfs1_buffer24",
+				      torture_smb2_qfs1_buffer24);
 	torture_suite_add_simple_test(suite, "qfile_buffercheck",
 				      torture_smb2_qfile_buffercheck);
 	torture_suite_add_simple_test(suite, "qsec_buffercheck",
