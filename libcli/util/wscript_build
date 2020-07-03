@@ -6,6 +6,6 @@ bld.SAMBA_LIBRARY('errors',
                   header_path='core',
                   source='doserr.c errormap.c nterr.c errmap_unix.c hresult.c',
                   public_deps='talloc samba-debug',
-                  private_library=True
-                  )
+                  private_library=True,
+                  cflags='-Wno-format-truncation')
 
