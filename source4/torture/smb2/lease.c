@@ -4035,6 +4035,127 @@ done:
 	return ret;
 }
 
+static bool test_lease_close_order(struct torture_context *tctx,
+				   struct smb2_tree *tree)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	struct smb2_create io;
+	struct smb2_lease ls1;
+	struct smb2_lease ls2;
+	struct smb2_handle h1 = {{0}};
+	struct smb2_handle h2 = {{0}};
+	struct smb2_handle h3 = {{0}};
+	struct smb2_handle hnew = {{0}};
+	NTSTATUS status;
+	const char *fname = "lease_ack_delay_test.dat";
+	bool ret = true;
+	struct smb2_request *reqc = NULL;
+	struct smb2_tree *tree2 = NULL;
+	struct smbcli_options options2;
+	uint32_t caps;
+	int i;
+
+	caps = smb2cli_conn_server_capabilities(tree->session->transport->conn);
+	if (!(caps & SMB2_CAP_LEASING)) {
+		torture_skip(tctx, "leases are not supported");
+	}
+
+	options2 = tree->session->transport->options;
+
+	smb2_util_unlink(tree, fname);
+
+	/* Grab a RWH lease on the first tree. */
+	smb2_lease_create(&io, &ls1, false, fname, LEASE1, smb2_util_lease_state("RWH"));
+	status = smb2_create(tree, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+	CHECK_LEASE(&io, "RWH", true, LEASE1, 0);
+	h1 = io.out.file.handle;
+
+	tree->session->transport->lease.handler	= torture_lease_handler;
+	tree->session->transport->lease.private_data = tree;
+	tree->session->transport->oplock.handler = torture_oplock_handler;
+	tree->session->transport->oplock.private_data = tree;
+
+	/* create a new connection (same client_guid) */
+	if (!torture_smb2_connection_ext(tctx, 0, &options2, &tree2)) {
+		torture_warning(tctx, "couldn't reconnect, bailing\n");
+		ret = false;
+		goto done;
+	}
+
+	tree2->session->transport->lease.handler	= torture_lease_handler;
+	tree2->session->transport->lease.private_data = tree2;
+	tree2->session->transport->oplock.handler = torture_oplock_handler;
+	tree2->session->transport->oplock.private_data = tree2;
+
+	/* Grab a second RWH lease, on the second tree. */
+	smb2_lease_create(&io, &ls1, false, fname, LEASE1, smb2_util_lease_state("RWH"));
+	status = smb2_create(tree2, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_CREATED(&io, EXISTED, FILE_ATTRIBUTE_ARCHIVE);
+	CHECK_LEASE(&io, "RWH", true, LEASE1, 0);
+	h2 = io.out.file.handle;
+
+	/* make some extra opens on tree 2 */
+	for (i = 0 ; i < 5 ; i++) {
+		smb2_lease_create(&io, &ls1, false, fname, LEASE1, smb2_util_lease_state("RWH"));
+		status = smb2_create(tree2, mem_ctx, &io);
+	}
+
+	/* Grab a third RWH lease, on the first tree. */
+	smb2_lease_create(&io, &ls1, false, fname, LEASE1, smb2_util_lease_state("RWH"));
+	status = smb2_create(tree, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_CREATED(&io, EXISTED, FILE_ATTRIBUTE_ARCHIVE);
+	CHECK_LEASE(&io, "RWH", true, LEASE1, 0);
+	h3 = io.out.file.handle;
+
+	/* make even more opens on tree 2 */
+	for (i = 0 ; i < 5 ; i++) {
+		smb2_lease_create(&io, &ls1, false, fname, LEASE1, smb2_util_lease_state("RWH"));
+		status = smb2_create(tree2, mem_ctx, &io);
+	}
+
+	/* close the first handle */
+	reqc = smb2_util_close_send(tree, h1);
+
+	smb_msleep(100);
+	/* close the second handle */
+	smb2_util_close(tree2, h2);
+
+	/* get the first close request */
+	smb2_util_close_recv(reqc);
+
+	/* sleep long enough for the ofile to be freed */
+	smb_msleep(100);
+
+	/* disconnect */
+	TALLOC_FREE(tree2);
+	tree2 = NULL;
+
+	smb_msleep(100);
+
+	/* Break with a RWH request. */
+	smb2_lease_create(&io, &ls2, false, fname, LEASE2, smb2_util_lease_state("RWH"));
+	status = smb2_create(tree, mem_ctx, &io);
+	hnew = io.out.file.handle;
+
+ done:
+	smb2_util_close(tree, h1);
+	smb2_util_close(tree, h3);
+	smb2_util_close(tree, hnew);
+
+	if (tree2 != NULL)
+		talloc_free(tree2);
+
+	smb2_util_unlink(tree, fname);
+
+	talloc_free(mem_ctx);
+
+	return ret;
+}
+
 struct torture_suite *torture_smb2_lease_init(TALLOC_CTX *ctx)
 {
 	struct torture_suite *suite =
@@ -4076,6 +4197,7 @@ struct torture_suite *torture_smb2_lease_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "dynamic_share", test_lease_dynamic_share);
 	torture_suite_add_1smb2_test(suite, "timeout", test_lease_timeout);
 	torture_suite_add_1smb2_test(suite, "unlink", test_lease_unlink);
+	torture_suite_add_1smb2_test(suite, "close_order", test_lease_close_order);
 
 	suite->description = talloc_strdup(suite, "SMB2-LEASE tests");
 

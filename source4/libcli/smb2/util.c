@@ -40,6 +40,25 @@ NTSTATUS smb2_util_close(struct smb2_tree *tree, struct smb2_handle h)
 	return smb2_close(tree, &c);
 }
 
+struct smb2_request *smb2_util_close_send(struct smb2_tree *tree, struct smb2_handle h)
+{
+	struct smb2_close c;
+
+	ZERO_STRUCT(c);
+	c.in.file.handle = h;
+
+	return smb2_close_send(tree, &c);
+}
+
+NTSTATUS smb2_util_close_recv(struct smb2_request *req)
+{
+	struct smb2_close c;
+
+	ZERO_STRUCT(c);
+
+	return smb2_close_recv(req, &c);
+}
+
 /*
   unlink a file with SMB2
 */
