@@ -1,11 +1,19 @@
 #!/bin/sh
 
+# Configure with options to build on recent openindiana,
+# mostly for the purpose of running smbtorture etc.
+
 WAF=./buildtools/bin/waf
 export JOBS=1
 
-export CC=gcc
-export CFLAGS='-std=c99 -D__EXTENSIONS__=1'
+export CC=/usr/bin/gcc
+export CXX=/usr/bin/g++
+export CFLAGS=' -std=c99 -D__EXTENSIONS__=1 -I/usr/include/python3.4m'
 export LINKFLAGS='-R/usr/local/samba/lib -R/usr/local/samba/lib/private -lrt -lsec -lcrypt -lmd5 -lsocket -lnsl -lsendfile -L/usr/gnu/lib -R/usr/gnu/lib'
+
+export PYTHON=/usr/bin/python3.4
+export LIBPYTHON=-lpython3.4m
+
 $WAF configure -C \
 	--prefix=/usr/local/samba \
 	--enable-developer \
@@ -18,3 +26,5 @@ $WAF configure -C \
 	--abi-check-disable \
 	--bundled-libraries=ALL \
 	"$@"
+
+echo "Run: gmake clean install smbtorture"
