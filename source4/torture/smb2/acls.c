@@ -40,6 +40,14 @@
 		goto done; \
 	}} while (0)
 
+#define CHECK_STATUS2(status, correct1, correct2) do {	 \
+	if (!NT_STATUS_EQUAL(status, correct1) && !NT_STATUS_EQUAL(status, correct2)) { \
+		torture_result(tctx, TORTURE_FAIL, "(%s) Incorrect status %s - should be %s or %s\n", \
+		       __location__, nt_errstr(status), nt_errstr(correct1), nt_errstr(correct2)); \
+		ret = false; \
+		goto done; \
+	}} while (0)
+
 #define BASEDIR "smb2-testsd"
 
 #define CHECK_ACCESS_IGNORE SEC_STD_SYNCHRONIZE
@@ -1949,6 +1957,185 @@ done:
 	CHECK_STATUS_FOR_BIT_ACTION(status, bits, do {} while (0)); \
 } while (0)
 
+static bool
+test_create_with_sacl(struct torture_context *tctx, struct smb2_tree *tree)
+{
+	NTSTATUS status;
+	bool is_admin, ret = true;
+	struct smb2_create io;
+	struct security_descriptor *sd;
+	const char *fname = BASEDIR "\\create_with_sacl.txt";
+	const char *dname = BASEDIR "\\create_with_sacl_dir";
+
+	if (!smb2_util_setup_dir(tctx, tree, BASEDIR))
+		return false;
+
+	smb2_util_unlink(tree, fname);
+	smb2_util_rmdir(tree, dname);
+
+	ZERO_STRUCT(io);
+	io.level = RAW_OPEN_SMB2;
+	io.in.create_flags = 0;
+	io.in.desired_access = SEC_FLAG_SYSTEM_SECURITY;
+	io.in.create_options = 0;
+	io.in.file_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	io.in.share_access = NTCREATEX_SHARE_ACCESS_READ | NTCREATEX_SHARE_ACCESS_WRITE;
+	io.in.alloc_size = 0;
+	io.in.create_disposition = NTCREATEX_DISP_OPEN;
+	io.in.impersonation_level = NTCREATEX_IMPERSONATION_ANONYMOUS;
+	io.in.security_flags = 0;
+	io.in.fname = BASEDIR;
+	status = smb2_create(tree, tctx, &io);
+
+	is_admin = NT_STATUS_EQUAL(status, NT_STATUS_OK);
+
+	if (NT_STATUS_EQUAL(status, NT_STATUS_SUCCESS))
+		smb2_util_close(tree, io.out.file.handle);
+
+	/*
+	 * Try to open a new file with ACCESS_SYSTEM_SECURITY
+	 */
+	torture_comment(tctx, "TESTING CREATE WITH ACCESS_SYSTEM_SECURITY\n");
+	ZERO_STRUCT(io);
+	io.level = RAW_OPEN_SMB2;
+	io.in.create_flags = 0;
+	io.in.desired_access = SEC_STD_DELETE | SEC_FLAG_SYSTEM_SECURITY;
+	io.in.create_options = NTCREATEX_OPTIONS_DELETE_ON_CLOSE;
+	io.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.in.share_access = NTCREATEX_SHARE_ACCESS_READ | NTCREATEX_SHARE_ACCESS_WRITE;
+	io.in.alloc_size = 0;
+	io.in.create_disposition = NTCREATEX_DISP_OVERWRITE_IF;
+	io.in.impersonation_level = NTCREATEX_IMPERSONATION_ANONYMOUS;
+	io.in.security_flags = 0;
+	io.in.fname = fname;
+	status = smb2_create(tree, tctx, &io);
+
+	if (NT_STATUS_EQUAL(status, NT_STATUS_SUCCESS))
+		smb2_util_close(tree, io.out.file.handle);
+
+	if (is_admin)
+		CHECK_STATUS(status, NT_STATUS_OK);
+	else
+		CHECK_STATUS2(status, NT_STATUS_ACCESS_DENIED,
+		    NT_STATUS_PRIVILEGE_NOT_HELD);
+
+	/* Now try to create a file with a SACL */
+	torture_comment(tctx, "TESTING CREATE_WITH_SACL\n");
+	sd = security_descriptor_sacl_create(tctx,
+					0, SID_NT_ANONYMOUS, SID_BUILTIN_USERS,
+					SID_WORLD,
+					SEC_ACE_TYPE_SYSTEM_AUDIT,
+					SEC_GENERIC_ALL,
+					0,
+					NULL);
+
+	security_descriptor_append(sd,
+				   SID_WORLD,
+				   SEC_ACE_TYPE_ACCESS_ALLOWED,
+				   SEC_GENERIC_ALL,
+				   0,
+				   NULL);
+
+	ZERO_STRUCT(io);
+	io.level = RAW_OPEN_SMB2;
+	io.in.create_flags = 0;
+	io.in.desired_access = SEC_FLAG_SYSTEM_SECURITY;
+	io.in.create_options = 0;
+	io.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.in.share_access = NTCREATEX_SHARE_ACCESS_READ | NTCREATEX_SHARE_ACCESS_WRITE;
+	io.in.alloc_size = 0;
+	io.in.create_disposition = NTCREATEX_DISP_OVERWRITE_IF;
+	io.in.impersonation_level = NTCREATEX_IMPERSONATION_ANONYMOUS;
+	io.in.security_flags = 0;
+	io.in.fname = fname;
+	io.in.sec_desc = sd;
+	status = smb2_create(tree, tctx, &io);
+
+	if (NT_STATUS_EQUAL(status, NT_STATUS_SUCCESS))
+		smb2_util_close(tree, io.out.file.handle);
+
+	if (is_admin)
+		CHECK_STATUS(status, NT_STATUS_OK);
+	else
+		CHECK_STATUS2(status, NT_STATUS_ACCESS_DENIED,
+		    NT_STATUS_PRIVILEGE_NOT_HELD);
+
+	/*
+	 * Repeat the tests, but with a directory
+	 */
+	torture_comment(tctx, "TESTING MKDIR WITH ACCESS_SYSTEM_SECURITY\n");
+	ZERO_STRUCT(io);
+	io.level = RAW_OPEN_SMB2;
+	io.in.create_flags = 0;
+	io.in.desired_access = SEC_STD_DELETE | SEC_FLAG_SYSTEM_SECURITY;
+	io.in.create_options = NTCREATEX_OPTIONS_DELETE_ON_CLOSE;
+	io.in.file_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	io.in.share_access = NTCREATEX_SHARE_ACCESS_READ | NTCREATEX_SHARE_ACCESS_WRITE;
+	io.in.alloc_size = 0;
+	io.in.create_disposition = NTCREATEX_DISP_OVERWRITE_IF;
+	io.in.impersonation_level = NTCREATEX_IMPERSONATION_ANONYMOUS;
+	io.in.security_flags = 0;
+	io.in.fname = dname;
+	status = smb2_create(tree, tctx, &io);
+
+	if (NT_STATUS_EQUAL(status, NT_STATUS_SUCCESS))
+		smb2_util_close(tree, io.out.file.handle);
+
+	if (is_admin)
+		CHECK_STATUS(status, NT_STATUS_OK);
+	else
+		CHECK_STATUS2(status, NT_STATUS_ACCESS_DENIED,
+		    NT_STATUS_PRIVILEGE_NOT_HELD);
+
+	/* Now try to create a file with a SACL */
+	torture_comment(tctx, "TESTING MKDIR_WITH_SACL\n");
+	sd = security_descriptor_sacl_create(tctx,
+					0, SID_NT_ANONYMOUS, SID_BUILTIN_USERS,
+					SID_WORLD,
+					SEC_ACE_TYPE_SYSTEM_AUDIT,
+					SEC_GENERIC_ALL,
+					0,
+					NULL);
+
+	security_descriptor_append(sd,
+				   SID_WORLD,
+				   SEC_ACE_TYPE_ACCESS_ALLOWED,
+				   SEC_GENERIC_ALL,
+				   0,
+				   NULL);
+
+	ZERO_STRUCT(io);
+	io.level = RAW_OPEN_SMB2;
+	io.in.create_flags = 0;
+	io.in.desired_access = SEC_FLAG_SYSTEM_SECURITY;
+	io.in.create_options = 0;
+	io.in.file_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	io.in.share_access = NTCREATEX_SHARE_ACCESS_READ | NTCREATEX_SHARE_ACCESS_WRITE;
+	io.in.alloc_size = 0;
+	io.in.create_disposition = NTCREATEX_DISP_OVERWRITE_IF;
+	io.in.impersonation_level = NTCREATEX_IMPERSONATION_ANONYMOUS;
+	io.in.security_flags = 0;
+	io.in.fname = dname;
+	io.in.sec_desc = sd;
+	status = smb2_create(tree, tctx, &io);
+
+	if (NT_STATUS_EQUAL(status, NT_STATUS_SUCCESS))
+		smb2_util_close(tree, io.out.file.handle);
+
+	if (is_admin)
+		CHECK_STATUS(status, NT_STATUS_OK);
+	else
+		CHECK_STATUS2(status, NT_STATUS_ACCESS_DENIED,
+		    NT_STATUS_PRIVILEGE_NOT_HELD);
+
+
+ done:
+	smb2_util_unlink(tree, fname);
+	smb2_util_unlink(tree, dname);
+
+	return ret;
+}
+
 #if 0
 /* test what access mask is needed for getting and setting security_descriptors */
 /* Note: This test was copied from raw/acls.c. */
@@ -2928,6 +3115,7 @@ struct torture_suite *torture_smb2_acls_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "INHERITFLAGS", test_inheritance_flags);
 	torture_suite_add_1smb2_test(suite, "SDFLAGSVSCHOWN", test_sd_flags_vs_chown);
 	torture_suite_add_1smb2_test(suite, "DYNAMIC", test_inheritance_dynamic);
+	torture_suite_add_1smb2_test(suite, "SACL", test_create_with_sacl);
 #if 0
 	/* XXX This test does not work against XP or Vista. */
 	torture_suite_add_1smb2_test(suite, "GETSET", test_sd_get_set);
