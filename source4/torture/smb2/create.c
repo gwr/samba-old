@@ -1520,6 +1520,296 @@ done:
 	return ret;
 }
 
+
+#define	BASEDIR "createwithsd"
+
+/*
+ * Test creating a directory with an inheritable DACL+SACL,
+ * then creating files with a NULL DACL or SACL and verifying
+ * the correct ACEs are set/inherited.
+ */
+static bool test_create_with_sd(struct torture_context *tctx,
+    struct smb2_tree *tree)
+{
+	NTSTATUS status;
+	struct smb2_create io;
+	const char *fsname = BASEDIR "\\nullsacl.txt";
+	const char *fdname = BASEDIR "\\nulldacl.txt";
+	const char *dname = BASEDIR;
+	const char *dsname = BASEDIR "\\nullsacl_dir";
+	const char *ddname = BASEDIR "\\nulldacl_dir";
+	bool ret = true, is_admin;
+	struct smb2_handle handle;
+	union smb_fileinfo q;
+	union smb_setfileinfo s;
+	struct security_descriptor *sd = security_descriptor_initialise(tctx), *dir_sd;
+
+	if (!smb2_util_setup_dir(tctx, tree, dname))
+		return false;
+
+	torture_comment(tctx, "TESTING CREATE_WITH_SD\n");
+
+	smb2_util_unlink(tree, fsname);
+	smb2_util_unlink(tree, fdname);
+	smb2_deltree(tree, dsname);
+	smb2_deltree(tree, ddname);
+
+	ZERO_STRUCT(io);
+	io.level = RAW_OPEN_SMB2;
+	io.in.create_flags = 0;
+	io.in.desired_access = SEC_STD_READ_CONTROL | SEC_STD_WRITE_DAC | SEC_STD_WRITE_OWNER | SEC_FLAG_SYSTEM_SECURITY;
+	io.in.create_options = 0;
+	io.in.file_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	io.in.share_access = NTCREATEX_SHARE_ACCESS_READ | NTCREATEX_SHARE_ACCESS_WRITE;
+	io.in.alloc_size = 0;
+	io.in.create_disposition = NTCREATEX_DISP_OPEN;
+	io.in.impersonation_level = NTCREATEX_IMPERSONATION_ANONYMOUS;
+	io.in.security_flags = 0;
+	io.in.fname = dname;
+	status = smb2_create(tree, tctx, &io);
+	is_admin = NT_STATUS_EQUAL(status, NT_STATUS_OK);
+
+	if (!NT_STATUS_EQUAL(status, NT_STATUS_OK)) {
+		io.in.desired_access = SEC_STD_READ_CONTROL | SEC_STD_WRITE_DAC | SEC_STD_WRITE_OWNER;
+		status = smb2_create(tree, tctx, &io);
+	}
+	CHECK_STATUS(status, NT_STATUS_OK);
+	handle = io.out.file.handle;
+
+	torture_comment(tctx, "set ACL on test dir\n");
+	if (is_admin) {
+		dir_sd = security_descriptor_sacl_create(tctx,
+		    0, SID_NT_ANONYMOUS, SID_BUILTIN_USERS,
+		    SID_WORLD,
+		    SEC_ACE_TYPE_SYSTEM_AUDIT,
+		    SEC_GENERIC_ALL,
+		    SEC_ACE_FLAG_OBJECT_INHERIT | SEC_ACE_FLAG_CONTAINER_INHERIT,
+		    SID_BUILTIN_USERS,
+		    SEC_ACE_TYPE_SYSTEM_AUDIT,
+		    SEC_GENERIC_ALL,
+		    SEC_ACE_FLAG_OBJECT_INHERIT | SEC_ACE_FLAG_CONTAINER_INHERIT,
+		    NULL);
+
+		security_descriptor_append(dir_sd,
+		    SID_WORLD,
+		    SEC_ACE_TYPE_ACCESS_ALLOWED,
+		    SEC_GENERIC_ALL,
+		    SEC_ACE_FLAG_OBJECT_INHERIT | SEC_ACE_FLAG_CONTAINER_INHERIT,
+		    SID_BUILTIN_USERS,
+		    SEC_ACE_TYPE_ACCESS_ALLOWED,
+		    SEC_GENERIC_ALL,
+		    SEC_ACE_FLAG_OBJECT_INHERIT | SEC_ACE_FLAG_CONTAINER_INHERIT,
+		    NULL);
+	} else {
+		dir_sd = security_descriptor_dacl_create(tctx,
+		    0, SID_NT_ANONYMOUS, SID_BUILTIN_USERS,
+		    SID_WORLD,
+		    SEC_ACE_TYPE_ACCESS_ALLOWED,
+		    SEC_GENERIC_ALL,
+		    SEC_ACE_FLAG_OBJECT_INHERIT | SEC_ACE_FLAG_CONTAINER_INHERIT,
+		    SID_BUILTIN_USERS,
+		    SEC_ACE_TYPE_ACCESS_ALLOWED,
+		    SEC_GENERIC_ALL,
+		    SEC_ACE_FLAG_OBJECT_INHERIT | SEC_ACE_FLAG_CONTAINER_INHERIT,
+		    NULL);
+	}
+
+	s.set_secdesc.level = RAW_SFILEINFO_SEC_DESC;
+	s.set_secdesc.in.file.handle = handle;
+	s.set_secdesc.in.secinfo_flags = SECINFO_DACL;
+	if (is_admin)
+		s.set_secdesc.in.secinfo_flags |= SECINFO_SACL;
+	s.set_secdesc.in.sd = dir_sd;
+	status = smb2_setinfo_file(tree, &s);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	smb2_util_close(tree, handle);
+
+	ZERO_STRUCT(io);
+	io.level = RAW_OPEN_SMB2;
+	io.in.create_flags = 0;
+	io.in.desired_access = SEC_STD_READ_CONTROL | SEC_STD_WRITE_DAC
+		| SEC_STD_WRITE_OWNER;
+	if (is_admin)
+		io.in.desired_access |= SEC_FLAG_SYSTEM_SECURITY;
+	io.in.create_options = 0;
+	io.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.in.share_access =
+		NTCREATEX_SHARE_ACCESS_READ | NTCREATEX_SHARE_ACCESS_WRITE;
+	io.in.alloc_size = 0;
+	io.in.create_disposition = NTCREATEX_DISP_CREATE;
+	io.in.impersonation_level = NTCREATEX_IMPERSONATION_ANONYMOUS;
+	io.in.security_flags = 0;
+	io.in.fname = fdname;
+	sd->type |= SEC_DESC_DACL_PRESENT;
+	io.in.sec_desc = sd;
+	io.in.create_options		= NTCREATEX_OPTIONS_SEQUENTIAL_ONLY |
+					  NTCREATEX_OPTIONS_ASYNC_ALERT	|
+					  NTCREATEX_OPTIONS_NON_DIRECTORY_FILE |
+					  0x00200000;
+
+	torture_comment(tctx, "creating a file with a NULL DACL\n");
+	status = smb2_create(tree, tctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	handle = io.out.file.handle;
+
+	torture_comment(tctx, "get the original sd\n");
+	q.query_secdesc.level = RAW_FILEINFO_SEC_DESC;
+	q.query_secdesc.in.file.handle = handle;
+	q.query_secdesc.in.secinfo_flags =
+		SECINFO_OWNER |
+		SECINFO_GROUP |
+		SECINFO_DACL;
+
+	if (is_admin)
+		q.query_secdesc.in.secinfo_flags |= SECINFO_SACL;
+
+	status = smb2_getinfo_file(tree, tctx, &q);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	if ((q.query_secdesc.out.sd->type & SEC_DESC_DACL_PRESENT) == 0) {
+		ret = false;
+		torture_fail_goto(tctx, done, "DACL_PRESENT flag not set by the server!\n");
+	}
+	if (q.query_secdesc.out.sd->dacl != NULL && q.query_secdesc.out.sd->dacl->num_aces > 1) {
+		ret = false;
+		torture_fail_goto(tctx, done, "dacl was inherited!\n");
+	}
+	if (is_admin && (q.query_secdesc.out.sd->sacl == NULL || q.query_secdesc.out.sd->sacl->num_aces < 2)) {
+		ret = false;
+		torture_fail_goto(tctx, done, "sacl was not inherited!\n");
+	}
+
+	smb2_util_close(tree, handle);
+
+	io.in.create_options = 0;
+	io.in.file_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	io.in.fname = ddname;
+	sd->type |= SEC_DESC_DACL_PRESENT;
+	io.in.sec_desc = sd;
+
+	torture_comment(tctx, "creating a directory with a NULL DACL\n");
+	status = smb2_create(tree, tctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	handle = io.out.file.handle;
+
+	torture_comment(tctx, "get the original sd\n");
+	q.query_secdesc.level = RAW_FILEINFO_SEC_DESC;
+	q.query_secdesc.in.file.handle = handle;
+	q.query_secdesc.in.secinfo_flags =
+		SECINFO_OWNER |
+		SECINFO_GROUP |
+		SECINFO_DACL;
+
+	if (is_admin)
+		q.query_secdesc.in.secinfo_flags |= SECINFO_SACL;
+
+	status = smb2_getinfo_file(tree, tctx, &q);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	if ((q.query_secdesc.out.sd->type & SEC_DESC_DACL_PRESENT) == 0) {
+		ret = false;
+		torture_fail_goto(tctx, done, "DACL_PRESENT flag not set by the server!\n");
+	}
+	if (q.query_secdesc.out.sd->dacl != NULL && q.query_secdesc.out.sd->dacl->num_aces > 1) {
+		ret = false;
+		torture_fail_goto(tctx, done, "dacl was inherited!\n");
+	}
+	if (is_admin && (q.query_secdesc.out.sd->sacl == NULL || q.query_secdesc.out.sd->sacl->num_aces < 2)) {
+		ret = false;
+		torture_fail_goto(tctx, done, "sacl was not inherited!\n");
+	}
+
+	if (!is_admin) {
+		torture_comment(tctx, "user does not have SeSecurityPrivilege; "
+		    "skipping SACL tests");
+		goto done;
+	}
+
+	smb2_util_close(tree, handle);
+
+	io.in.fname = dsname;
+	sd->type &= ~SEC_DESC_DACL_PRESENT;
+	sd->type |= SEC_DESC_SACL_PRESENT;
+	io.in.sec_desc = sd;
+
+	torture_comment(tctx, "creating a directory with a NULL SACL\n");
+	status = smb2_create(tree, tctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	handle = io.out.file.handle;
+
+	torture_comment(tctx, "get the original sd\n");
+	q.query_secdesc.level = RAW_FILEINFO_SEC_DESC;
+	q.query_secdesc.in.file.handle = handle;
+	q.query_secdesc.in.secinfo_flags =
+		SECINFO_OWNER |
+		SECINFO_GROUP |
+		SECINFO_DACL |
+		SECINFO_SACL;
+
+	status = smb2_getinfo_file(tree, tctx, &q);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	if (q.query_secdesc.out.sd->sacl != NULL && q.query_secdesc.out.sd->sacl->num_aces > 0) {
+		ret = false;
+		torture_fail_goto(tctx, done, "SACL was inherited!\n");
+	}
+
+	if (q.query_secdesc.out.sd->dacl == NULL ||
+	    q.query_secdesc.out.sd->dacl->num_aces < 2) {
+		ret = false;
+		torture_fail_goto(tctx, done, "DACL was not inherited!\n");
+	}
+
+	smb2_util_close(tree, handle);
+
+	io.in.fname = fsname;
+	io.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.in.create_options		= NTCREATEX_OPTIONS_SEQUENTIAL_ONLY |
+					  NTCREATEX_OPTIONS_ASYNC_ALERT	|
+					  NTCREATEX_OPTIONS_NON_DIRECTORY_FILE |
+					  0x00200000;
+
+	torture_comment(tctx, "creating a file with a NULL SACL\n");
+	status = smb2_create(tree, tctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	handle = io.out.file.handle;
+
+	torture_comment(tctx, "get the original sd\n");
+	q.query_secdesc.level = RAW_FILEINFO_SEC_DESC;
+	q.query_secdesc.in.file.handle = handle;
+	q.query_secdesc.in.secinfo_flags =
+		SECINFO_OWNER |
+		SECINFO_GROUP |
+		SECINFO_DACL |
+		SECINFO_SACL;
+
+	status = smb2_getinfo_file(tree, tctx, &q);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	if (q.query_secdesc.out.sd->sacl != NULL && q.query_secdesc.out.sd->sacl->num_aces > 0) {
+		ret = false;
+		torture_fail_goto(tctx, done, "SACL was inherited!\n");
+	}
+
+	if (q.query_secdesc.out.sd->dacl == NULL ||
+	    q.query_secdesc.out.sd->dacl->num_aces < 2) {
+		ret = false;
+		torture_fail_goto(tctx, done, "DACL was not inherited!\n");
+	}
+
+ done:
+	smb2_util_close(tree, handle);
+	smb2_util_unlink(tree, fsname);
+	smb2_util_unlink(tree, fdname);
+	smb2_deltree(tree, dsname);
+	smb2_deltree(tree, ddname);
+	smb2_deltree(tree, dname);
+	smb2_tdis(tree);
+	smb2_logoff(tree->session);
+	return ret;
+}
+
 /*
   test SMB2 mkdir with OPEN_IF on the same name twice.
   Must use 2 connections to hit the race.
@@ -1979,6 +2269,7 @@ struct torture_suite *torture_smb2_create_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "aclfile", test_create_acl_file);
 	torture_suite_add_1smb2_test(suite, "acldir", test_create_acl_dir);
 	torture_suite_add_1smb2_test(suite, "nulldacl", test_create_null_dacl);
+	torture_suite_add_1smb2_test(suite, "with-sd", test_create_with_sd);
 	torture_suite_add_1smb2_test(suite, "mkdir-dup", test_mkdir_dup);
 	torture_suite_add_1smb2_test(suite, "dir-alloc-size", test_dir_alloc_size);
 	torture_suite_add_1smb2_test(suite, "readonly", test_create_readonly);
