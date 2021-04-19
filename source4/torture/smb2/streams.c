@@ -98,6 +98,7 @@ static bool check_stream(struct smb2_tree *tree,
 			 const char *sname,
 			 const char *value)
 {
+	struct torture_context *tctx = talloc_parent(mem_ctx);
 	struct smb2_handle handle;
 	struct smb2_create create;
 	struct smb2_read r;
@@ -117,7 +118,7 @@ static bool check_stream(struct smb2_tree *tree,
 		if (value == NULL) {
 			return true;
 		} else {
-			torture_comment(mem_ctx, "Unable to open stream %s\n",
+			torture_comment(tctx, "Unable to open stream %s\n",
 			    full_name);
 			return false;
 		}
@@ -137,13 +138,13 @@ static bool check_stream(struct smb2_tree *tree,
 	status = smb2_read(tree, tree, &r);
 
 	if (!NT_STATUS_IS_OK(status)) {
-		torture_comment(mem_ctx, "(%s) Failed to read %lu bytes from "
+		torture_comment(tctx, "(%s) Failed to read %lu bytes from "
 		    "stream '%s'\n", location, (long)strlen(value), full_name);
 		return false;
 	}
 
 	if (memcmp(r.out.data.data, value, strlen(value)) != 0) {
-		torture_comment(mem_ctx, "(%s) Bad data in stream\n", location);
+		torture_comment(tctx, "(%s) Bad data in stream\n", location);
 		return false;
 	}
 
@@ -405,6 +406,12 @@ static bool test_stream_io(struct torture_context *tctx,
 	ret &= check_stream(tree, __location__, mem_ctx, fname,
 			    "Stream One:", NULL);
 
+	if (!ret) {
+		torture_result(tctx, TORTURE_FAIL,
+		    "check_stream(\"Stream One:*\") failed\n");
+		goto done;
+	}
+
 	ret &= check_stream(tree, __location__, mem_ctx, fname,
 			    "Second Stream", "SECOND STREAM");
 
@@ -418,6 +425,12 @@ static bool test_stream_io(struct torture_context *tctx,
 
 	ret &= check_stream(tree, __location__, mem_ctx, fname,
 			    "Second Stream:$FOO", NULL);
+
+	if (!ret) {
+		torture_result(tctx, TORTURE_FAIL,
+		    "check_stream(\"Second Stream:*\") failed\n");
+		goto done;
+	}
 
 	io.smb2.in.fname = sname2;
 	io.smb2.in.create_disposition = NTCREATEX_DISP_OPEN_IF;
