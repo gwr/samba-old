@@ -4250,6 +4250,111 @@ static bool test_lease_mixed_durable(struct torture_context *tctx,
 	return ret;
 }
 
+static bool test_lease_durable_upgrade(struct torture_context *tctx,
+				   struct smb2_tree *tree)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	struct smb2_create io;
+	struct smb2_lease ls1;
+	struct smb2_handle h1 = {{0}};
+	struct smb2_handle h2 = {{0}};
+	NTSTATUS status;
+	const char *fname = "lease_durable_upgrade_test.dat";
+	bool ret = true;
+	struct smb2_tree *tree2 = NULL;
+	struct smbcli_options options2;
+	struct GUID guid1 = GUID_random();
+	struct GUID guid2 = GUID_random();
+	uint32_t caps;
+
+	caps = smb2cli_conn_server_capabilities(tree->session->transport->conn);
+	if (!(caps & SMB2_CAP_LEASING)) {
+		torture_skip(tctx, "leases are not supported");
+	}
+
+	options2 = tree->session->transport->options;
+
+	smb2_util_unlink(tree, fname);
+
+	/* Grab a RH lease on the first handle. */
+	smb2_lease_create(&io, &ls1, false, fname, LEASE2, smb2_util_lease_state("RH"));
+
+	io.in.durable_open_v2 = true;
+	io.in.create_guid = guid1;
+	io.in.timeout = UINT32_MAX;
+
+	status = smb2_create(tree, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+	CHECK_LEASE(&io, "RH", true, LEASE2, 0);
+	CHECK_VAL(io.out.durable_open, false);
+	CHECK_VAL(io.out.durable_open_v2, true);
+	CHECK_VAL(io.out.persistent_open, false);
+
+	h1 = io.out.file.handle;
+
+	tree->session->transport->lease.handler	= torture_lease_handler;
+	tree->session->transport->lease.private_data = tree;
+	tree->session->transport->oplock.handler = torture_oplock_handler;
+	tree->session->transport->oplock.private_data = tree;
+
+	/* Upgrade lease to RWH on the second handle. */
+	smb2_lease_create(&io, &ls1, false, fname, LEASE2, smb2_util_lease_state("RWH"));
+
+	io.in.durable_open_v2 = true;
+	io.in.create_guid = guid2;
+	io.in.timeout = UINT32_MAX;
+	status = smb2_create(tree, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_CREATED(&io, EXISTED, FILE_ATTRIBUTE_ARCHIVE);
+	CHECK_LEASE(&io, "RWH", true, LEASE2, 0);
+	CHECK_VAL(io.out.durable_open, false);
+	CHECK_VAL(io.out.durable_open_v2, true);
+	CHECK_VAL(io.out.persistent_open, false);
+
+	h2 = io.out.file.handle;
+
+	/* create a new connection (same client_guid) */
+	if (!torture_smb2_connection_ext(tctx,
+	    smb2cli_session_current_id(tree->session->smbXcli),
+	    &options2, &tree2)) {
+		torture_warning(tctx, "couldn't reconnect, bailing\n");
+		ret = false;
+		goto done;
+	}
+
+	tree2->session->transport->lease.handler	= torture_lease_handler;
+	tree2->session->transport->lease.private_data = tree2;
+	tree2->session->transport->oplock.handler = torture_oplock_handler;
+	tree2->session->transport->oplock.private_data = tree2;
+
+	ZERO_STRUCT(io);
+	io.in.fname = fname;
+	io.in.durable_handle_v2 = &h1;
+	io.in.create_guid = guid1;
+	io.in.lease_request = &ls1;
+	status = smb2_create(tree2, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_SUCCESS);
+
+	io.in.durable_handle_v2 = &h2;
+	io.in.create_guid = guid2;
+	status = smb2_create(tree2, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_SUCCESS);
+
+ done:
+	smb2_util_close(tree, h1);
+	smb2_util_close(tree, h2);
+
+	if (tree2 != NULL)
+		talloc_free(tree2);
+
+	smb2_util_unlink(tree, fname);
+
+	talloc_free(mem_ctx);
+
+	return ret;
+}
+
 struct torture_suite *torture_smb2_lease_init(TALLOC_CTX *ctx)
 {
 	struct torture_suite *suite =
@@ -4293,6 +4398,7 @@ struct torture_suite *torture_smb2_lease_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "unlink", test_lease_unlink);
 	torture_suite_add_1smb2_test(suite, "close_order", test_lease_close_order);
 	torture_suite_add_1smb2_test(suite, "mixed_durable", test_lease_mixed_durable);
+	torture_suite_add_1smb2_test(suite, "durable_upgrade", test_lease_durable_upgrade);
 
 	suite->description = talloc_strdup(suite, "SMB2-LEASE tests");
 
