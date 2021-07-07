@@ -4256,6 +4256,270 @@ static bool test_lease_mixed_durable(struct torture_context *tctx,
 	return ret;
 }
 
+static bool test_lease_durable_break_h(struct torture_context *tctx,
+				   struct smb2_tree *tree)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	struct smb2_create io;
+	struct smb2_lease ls1;
+	struct smb2_handle h1 = {{0}};
+	struct smb2_handle h2 = {{0}};
+	struct smb2_handle h3 = {{0}};
+	struct smbcli_options options2;
+	struct smb2_ioctl ioctl;
+	uint8_t res_req[8];
+	NTSTATUS status;
+	const char *fname = "lease_durable_breakh_test.dat";
+	struct smb2_tree *tree2 = NULL;
+	struct smb2_tree *unlink_tree = tree;
+	uint32_t caps;
+	bool ret = true;
+
+	caps = smb2cli_conn_server_capabilities(tree->session->transport->conn);
+	if (!(caps & SMB2_CAP_LEASING)) {
+		torture_skip(tctx, "leases are not supported");
+	}
+
+	options2 = tree->session->transport->options;
+
+	smb2_util_unlink(tree, fname);
+
+	/* Grab a RH lease on the first handle. */
+	smb2_lease_create_share(&io, &ls1, false, fname, smb2_util_share_access("RW"), LEASE2, smb2_util_lease_state("RH"));
+	io.in.desired_access &= ~SEC_STD_DELETE;
+	status = smb2_create(tree, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+	CHECK_LEASE(&io, "RH", true, LEASE2, 0);
+
+	h1 = io.out.file.handle;
+
+	SIVAL(res_req, 0, 1000); /* timeout */
+	SIVAL(res_req, 4, 0);    /* reserved */
+	ioctl = (struct smb2_ioctl) {
+		.level = RAW_IOCTL_SMB2,
+		.in.file.handle = h1,
+		.in.function = FSCTL_LMR_REQ_RESILIENCY,
+		.in.max_response_size = 0,
+		.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL,
+		.in.out.data = res_req,
+		.in.out.length = sizeof(res_req)
+	};
+	status = smb2_ioctl(tree, mem_ctx, &ioctl);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	tree->session->transport->lease.handler = torture_lease_handler;
+	tree->session->transport->lease.private_data = tree;
+	tree->session->transport->oplock.handler = torture_oplock_handler;
+	tree->session->transport->oplock.private_data = tree;
+
+	/* create a new connection (same client_guid) */
+	if (!torture_smb2_connection_ext(tctx, 0,
+	    &options2, &tree2)) {
+		torture_warning(tctx, "couldn't connect again , bailing\n");
+		ret = false;
+		goto done;
+	}
+
+	unlink_tree = tree2;
+	tree2->session->transport->lease.handler = torture_lease_handler;
+	tree2->session->transport->lease.private_data = tree2;
+	tree2->session->transport->oplock.handler = torture_oplock_handler;
+	tree2->session->transport->oplock.private_data = tree2;
+
+	/* Get a similar handle on the 2nd connection. */
+	status = smb2_create(tree2, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_LEASE(&io, "RH", true, LEASE2, 0);
+
+	h2 = io.out.file.handle;
+
+	SIVAL(res_req, 0, 1000); /* timeout */
+	SIVAL(res_req, 4, 0);    /* reserved */
+	ioctl = (struct smb2_ioctl) {
+		.level = RAW_IOCTL_SMB2,
+		.in.file.handle = h2,
+		.in.function = FSCTL_LMR_REQ_RESILIENCY,
+		.in.max_response_size = 0,
+		.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL,
+		.in.out.data = res_req,
+		.in.out.length = sizeof(res_req)
+	};
+	status = smb2_ioctl(tree2, mem_ctx, &ioctl);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	/* Drop the first connection, and orphan the file. */
+	TALLOC_FREE(tree);
+	tree = NULL;
+	smb_msleep(1000);
+
+	/* Open a file with conflicting share access. */
+	ZERO_STRUCT(io);
+	io.in.fname = fname;
+	io.in.desired_access = SEC_STD_DELETE;
+	io.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.in.create_disposition = NTCREATEX_DISP_OPEN;
+	io.in.share_access = smb2_util_share_access("RWD");
+	status = smb2_create(tree2, mem_ctx, &io);
+	if (NT_STATUS_EQUAL(status, NT_STATUS_OK))
+		h3 = io.out.file.handle;
+
+	smb_msleep(1000);
+
+ done:
+	if (tree != NULL)
+		smb2_util_close(tree, h1);
+	if (tree2 != NULL) {
+		smb2_util_close(tree2, h2);
+		smb2_util_close(tree2, h3);
+	}
+
+	smb2_util_unlink(unlink_tree, fname);
+
+	if (tree2 != NULL)
+		talloc_free(tree2);
+
+
+	talloc_free(mem_ctx);
+
+	return ret;
+}
+
+static bool test_lease_durable_break_w(struct torture_context *tctx,
+				   struct smb2_tree *tree)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	struct smb2_create io;
+	struct smb2_lease ls1;
+	struct smb2_handle h1 = {{0}};
+	struct smb2_handle h2 = {{0}};
+	struct smb2_handle h3 = {{0}};
+	struct smbcli_options options2;
+	struct smb2_ioctl ioctl;
+	uint8_t res_req[8];
+	NTSTATUS status;
+	const char *fname = "lease_durable_breakw_test.dat";
+	struct smb2_tree *tree2 = NULL;
+	struct smb2_tree *unlink_tree = tree;
+	uint32_t caps;
+	bool ret = true;
+
+	caps = smb2cli_conn_server_capabilities(tree->session->transport->conn);
+	if (!(caps & SMB2_CAP_LEASING)) {
+		torture_skip(tctx, "leases are not supported");
+	}
+
+	options2 = tree->session->transport->options;
+
+	smb2_util_unlink(tree, fname);
+
+	/* Grab a RW lease on the first handle. */
+	smb2_lease_create_share(&io, &ls1, false, fname, smb2_util_share_access("RW"), LEASE2, smb2_util_lease_state("RW"));
+	io.in.desired_access &= ~SEC_STD_DELETE;
+	status = smb2_create(tree, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+	CHECK_LEASE(&io, "RW", true, LEASE2, 0);
+
+	h1 = io.out.file.handle;
+
+	SIVAL(res_req, 0, 1000); /* timeout */
+	SIVAL(res_req, 4, 0);    /* reserved */
+	ioctl = (struct smb2_ioctl) {
+		.level = RAW_IOCTL_SMB2,
+		.in.file.handle = h1,
+		.in.function = FSCTL_LMR_REQ_RESILIENCY,
+		.in.max_response_size = 0,
+		.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL,
+		.in.out.data = res_req,
+		.in.out.length = sizeof(res_req)
+	};
+	status = smb2_ioctl(tree, mem_ctx, &ioctl);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	tree->session->transport->lease.handler = torture_lease_handler;
+	tree->session->transport->lease.private_data = tree;
+	tree->session->transport->oplock.handler = torture_oplock_handler;
+	tree->session->transport->oplock.private_data = tree;
+
+	/* create a new connection (same client_guid) */
+	if (!torture_smb2_connection_ext(tctx, 0,
+	    &options2, &tree2)) {
+		torture_warning(tctx, "couldn't connect again , bailing\n");
+		ret = false;
+		goto done;
+	}
+
+	unlink_tree = tree2;
+	tree2->session->transport->lease.handler = torture_lease_handler;
+	tree2->session->transport->lease.private_data = tree2;
+	tree2->session->transport->oplock.handler = torture_oplock_handler;
+	tree2->session->transport->oplock.private_data = tree2;
+
+	/* Get a similar handle on the 2nd connection. */
+	status = smb2_create(tree2, mem_ctx, &io);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	CHECK_LEASE(&io, "RW", true, LEASE2, 0);
+
+	h2 = io.out.file.handle;
+
+	SIVAL(res_req, 0, 1000); /* timeout */
+	SIVAL(res_req, 4, 0);    /* reserved */
+	ioctl = (struct smb2_ioctl) {
+		.level = RAW_IOCTL_SMB2,
+		.in.file.handle = h2,
+		.in.function = FSCTL_LMR_REQ_RESILIENCY,
+		.in.max_response_size = 0,
+		.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL,
+		.in.out.data = res_req,
+		.in.out.length = sizeof(res_req)
+	};
+	status = smb2_ioctl(tree2, mem_ctx, &ioctl);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	/* Drop the first connection, and orphan the file. */
+	TALLOC_FREE(tree);
+	tree = NULL;
+	smb_msleep(1000);
+
+
+	/* Open a non-conflicting handle to break Write caching */
+	ZERO_STRUCT(io);
+	io.in.fname = fname;
+	io.in.desired_access = SEC_FILE_WRITE_DATA;
+	io.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.in.create_disposition = NTCREATEX_DISP_OPEN;
+	io.in.share_access = smb2_util_share_access("RWD");
+	(void) smb2_create_send(tree2, &io);
+	smb_msleep(10);
+
+	/* Open a file with conflicting share access. */
+	io.in.desired_access = SEC_STD_DELETE;
+	status = smb2_create(tree2, mem_ctx, &io);
+	if (NT_STATUS_EQUAL(status, NT_STATUS_OK))
+		h3 = io.out.file.handle;
+
+	smb_msleep(1000);
+
+ done:
+	if (tree != NULL)
+		smb2_util_close(tree, h1);
+	if (tree2 != NULL) {
+		smb2_util_close(tree2, h2);
+		smb2_util_close(tree2, h3);
+	}
+
+	smb2_util_unlink(unlink_tree, fname);
+
+	if (tree2 != NULL)
+		talloc_free(tree2);
+
+
+	talloc_free(mem_ctx);
+
+	return ret;
+}
+
 static bool test_lease_durable_upgrade(struct torture_context *tctx,
 				   struct smb2_tree *tree)
 {
@@ -4404,6 +4668,8 @@ struct torture_suite *torture_smb2_lease_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "unlink", test_lease_unlink);
 	torture_suite_add_1smb2_test(suite, "close_order", test_lease_close_order);
 	torture_suite_add_1smb2_test(suite, "mixed_durable", test_lease_mixed_durable);
+	torture_suite_add_1smb2_test(suite, "durable_break_h", test_lease_durable_break_h);
+	torture_suite_add_1smb2_test(suite, "durable_break_w", test_lease_durable_break_w);
 	torture_suite_add_1smb2_test(suite, "durable_upgrade", test_lease_durable_upgrade);
 
 	suite->description = talloc_strdup(suite, "SMB2-LEASE tests");
