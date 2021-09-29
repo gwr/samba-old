@@ -109,7 +109,7 @@ struct lease_break_info {
 		_CHECK_BREAK_INFO(__oldstate, __state, __key);		\
 		CHECK_VAL(lease_break_info.lease_break.new_epoch, __epoch);	\
 		if (!TARGET_IS_SAMBA3(tctx)) {				\
-			CHECK_VAL((uintptr_t)lease_break_info.lease_transport, \
+			WARN_VAL((uintptr_t)lease_break_info.lease_transport, \
 				  (uintptr_t)__transport);		\
 		} \
 	} while(0)

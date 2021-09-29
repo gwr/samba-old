@@ -38,6 +38,12 @@
 		ret = false; \
 	}} while (0)
 
+#define WARN_VAL(v, correct) do { \
+	if ((v) != (correct)) { \
+		torture_warning(tctx, "(%s): wrong value for %s got 0x%x - should be 0x%x\n", \
+				__location__, #v, (int)(v), (int)(correct)); \
+	}} while (0)
+
 #define CHECK_STATUS(status, correct) do { \
 	if (!NT_STATUS_EQUAL(status, correct)) { \
 		torture_result(tctx, TORTURE_FAIL, __location__": Incorrect status %s - should be %s", \
