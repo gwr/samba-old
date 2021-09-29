@@ -2252,6 +2252,53 @@ static bool test_create_readonly(struct torture_context *tctx,
 }
 
 /*
+  test SMB2 open with a very long file name.
+  should give NT_STATUS_NAME_TOO_LONG
+*/
+static bool test_smb2_long_name(struct torture_context *tctx,
+				    struct smb2_tree *tree)
+{
+	union smb_open io;
+	const char *fname = DNAME "\\longname"
+		"0123456789abcdefghijklmnopqrstuvwxyz"
+		"0123456789abcdefghijklmnopqrstuvwxyz"
+		"0123456789abcdefghijklmnopqrstuvwxyz"
+		"0123456789abcdefghijklmnopqrstuvwxyz"
+		"0123456789abcdefghijklmnopqrstuvwxyz"
+		"0123456789abcdefghijklmnopqrstuvwxyz"
+		"0123456789abcdefghijklmnopqrstuvwxyz"
+		".txt";
+	NTSTATUS status;
+	struct smb2_handle h;
+	bool ret = true;
+
+	torture_comment(tctx,
+		"Trying to create a file with length 264\n");
+	smb2_util_unlink(tree, fname);
+	smb2_deltree(tree, DNAME);
+
+	status = torture_smb2_testdir(tree, DNAME, &h);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	ZERO_STRUCT(io.smb2);
+	io.generic.level = RAW_OPEN_SMB2;
+	io.smb2.in.desired_access = SEC_RIGHTS_FILE_ALL;
+	io.smb2.in.file_attributes   = FILE_ATTRIBUTE_NORMAL;
+	io.smb2.in.create_disposition = NTCREATEX_DISP_CREATE;
+	io.smb2.in.share_access = NTCREATEX_SHARE_ACCESS_READ |
+				NTCREATEX_SHARE_ACCESS_WRITE |
+				NTCREATEX_SHARE_ACCESS_DELETE;
+	io.smb2.in.create_options = 0;
+	io.smb2.in.fname = fname;
+
+	status = smb2_create(tree, tree, &(io.smb2));
+	CHECK_STATUS(status, NT_STATUS_NAME_TOO_LONG);
+
+	smb2_deltree(tree, DNAME);
+	return ret;
+}
+
+/*
    basic testing of SMB2 create
 */
 struct torture_suite *torture_smb2_create_init(TALLOC_CTX *ctx)
@@ -2273,7 +2320,7 @@ struct torture_suite *torture_smb2_create_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "mkdir-dup", test_mkdir_dup);
 	torture_suite_add_1smb2_test(suite, "dir-alloc-size", test_dir_alloc_size);
 	torture_suite_add_1smb2_test(suite, "readonly", test_create_readonly);
-
+	torture_suite_add_1smb2_test(suite, "longname", test_smb2_long_name);
 	suite->description = talloc_strdup(suite, "SMB2-CREATE tests");
 
 	return suite;
