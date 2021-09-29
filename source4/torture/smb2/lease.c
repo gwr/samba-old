@@ -4074,7 +4074,7 @@ static bool test_lease_close_order(struct torture_context *tctx,
 	smb2_lease_create(&io, &ls1, false, fname, LEASE1, smb2_util_lease_state("RWH"));
 	status = smb2_create(tree, mem_ctx, &io);
 	CHECK_STATUS(status, NT_STATUS_OK);
-	CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+	//CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
 	CHECK_LEASE(&io, "RWH", true, LEASE1, 0);
 	h1 = io.out.file.handle;
 
@@ -4192,7 +4192,7 @@ static bool test_lease_mixed_durable(struct torture_context *tctx,
 	smb2_lease_create(&io, &ls1, false, fname, LEASE2, smb2_util_lease_state("RH"));
 	status = smb2_create(tree, mem_ctx, &io);
 	CHECK_STATUS(status, NT_STATUS_OK);
-	CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+	//CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
 	CHECK_LEASE(&io, "RH", true, LEASE2, 0);
 
 	h1 = io.out.file.handle;
@@ -4291,7 +4291,7 @@ static bool test_lease_durable_upgrade(struct torture_context *tctx,
 
 	status = smb2_create(tree, mem_ctx, &io);
 	CHECK_STATUS(status, NT_STATUS_OK);
-	CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+	//CHECK_CREATED(&io, CREATED, FILE_ATTRIBUTE_ARCHIVE);
 	CHECK_LEASE(&io, "RH", true, LEASE2, 0);
 	CHECK_VAL(io.out.durable_open, false);
 	CHECK_VAL(io.out.durable_open_v2, true);
