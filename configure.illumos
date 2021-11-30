@@ -2,17 +2,20 @@
 
 # Configure with options to build on recent openindiana,
 # mostly for the purpose of running smbtorture etc.
+#
+# Note that OI now delivers (only) a 64-bit python, and building Samba
+# requries support for embedded python, so build Samba 64-bit.
 
 WAF=./buildtools/bin/waf
 export JOBS=1
 
-export CC=/usr/bin/gcc
-export CXX=/usr/bin/g++
-export CFLAGS=' -std=c99 -D__EXTENSIONS__=1 -I/usr/include/python3.4m'
-export LINKFLAGS='-R/usr/local/samba/lib -R/usr/local/samba/lib/private -lrt -lsec -lcrypt -lmd5 -lsocket -lnsl -lsendfile -L/usr/gnu/lib -R/usr/gnu/lib'
+export CC="/usr/bin/gcc -m64"
+export CXX="/usr/bin/g++ -m64"
+export CFLAGS=' -std=c99 -D__EXTENSIONS__=1 -I/usr/include/python3.5m'
+export LDFLAGS='-R/usr/local/samba/lib -R/usr/local/samba/lib/private -lrt -lsec -lcrypt -lmd5 -lsocket -lnsl -lsendfile -lssp_ns -L/usr/gnu/lib -R/usr/gnu/lib'
+# export LINKFKAGS="$LDFLAGS"
 
-export PYTHON=/usr/bin/python3.4
-export LIBPYTHON=-lpython3.4m
+export PYTHON=/usr/bin/python3.5m
 
 $WAF configure -C \
 	--prefix=/usr/local/samba \
@@ -20,7 +23,7 @@ $WAF configure -C \
 	--disable-avahi \
 	--disable-rpath \
 	--nopyo --nopycache \
-	--python=/usr/bin/python3.4 \
+	--python=$PYTHON \
 	--without-ad-dc \
 	--without-pam \
 	--abi-check-disable \
