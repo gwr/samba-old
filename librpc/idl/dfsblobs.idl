@@ -112,4 +112,26 @@ interface dfsblobs
                [out,ref]       dfs_referral_resp *resp
               );
 
+	typedef [public] struct {
+		[value(2*strlen_m(string))] uint16 length;
+		[charset(UTF16)] uint16 string[length];
+	} DFS_LSTRING;
+
+	typedef [public,gensize] struct {
+		DFS_LSTRING file;
+		DFS_LSTRING site;
+	} DFS_GetDFSRefExStrings;
+
+	typedef [public] struct {
+		uint16 max_referral_level;
+		uint16 req_flags;
+		[value(ndr_size_DFS_GetDFSRefExStrings(&strings, ndr->flags))] uint32 __ndr_size;
+		DFS_GetDFSRefExStrings strings;
+	} dfs_GetDFSReferralEx_in;
+
+       [public] void dfs_GetDFSReferralEx(
+               [in]            dfs_GetDFSReferralEx_in req,
+               [out,ref]       dfs_referral_resp *resp
+              );
+
 }
