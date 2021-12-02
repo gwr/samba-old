@@ -82,9 +82,16 @@ static bool test_get_root_referral(struct torture_context *tctx,
 {
 	struct dfs_GetDFSReferral r;
 	struct dfs_referral_resp resp;
+	char *unc;
 
+	/* XXX: Until I figure out how to use a cli option... */
+	unc = getenv("UNC");
+	if (unc == NULL)
+		unc = "\\localhost\\test";
+
+	ZERO_STRUCT(r);
 	r.in.req.max_referral_level = 4;
-	r.in.req.servername = "\\gwr-test1\\test";	// XXX
+	r.in.req.servername = unc;
 	r.out.resp = &resp;
 
 	torture_assert_ntstatus_ok(tctx,
@@ -176,10 +183,16 @@ static bool test_get_root_referral_ex(struct torture_context *tctx,
 {
 	struct dfs_GetDFSReferralEx r;
 	struct dfs_referral_resp resp;
+	char *unc;
+
+	/* XXX: Until I figure out how to use a cli option... */
+	unc = getenv("UNC");
+	if (unc == NULL)
+		unc = "\\localhost\\test";
 
 	ZERO_STRUCT(r);
 	r.in.req.max_referral_level = 4;
-	r.in.req.strings.file.string = "\\gwr-test1\\test";	// XXX
+	r.in.req.strings.file.string = unc;
 	r.out.resp = &resp;
 
 	torture_assert_ntstatus_ok(tctx,
