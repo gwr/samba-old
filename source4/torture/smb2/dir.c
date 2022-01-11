@@ -644,6 +644,73 @@ done:
 	return ret;
 }
 
+/*
+   basic testing of File "Both" Information Class using a single file
+*/
+static bool test_both_file(struct torture_context *tctx,
+			  struct smb2_tree *tree)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	bool ret = true;
+	const char *fname =  "torture_search.txt";
+	NTSTATUS status;
+	int i;
+	unsigned int count;
+	union smb_fileinfo all_info2, alt_info, internal_info;
+	union smb_search_data *s;
+	union smb_search_data d;
+	struct smb2_handle h, h2;
+
+	status = torture_smb2_testdir(tree, DNAME, &h);
+	torture_assert_ntstatus_ok_goto(tctx, status, ret, done, "");
+
+	status = smb2_create_complex_file(tctx, tree, DNAME "\\torture_search.txt",
+					  &h2);
+	torture_assert_ntstatus_ok_goto(tctx, status, ret, done, "");
+
+	/* call all the File Information Classes */
+	for (i=0;i<ARRAY_SIZE(levels);i++) {
+		torture_comment(tctx, "Testing %s %d\n", levels[i].name,
+				levels[i].level);
+
+		levels[i].status = torture_single_file_search(tree, mem_ctx,
+				   fname, levels[i].level, levels[i].data_level,
+				   i, &d, &count, &h);
+		torture_assert_ntstatus_ok_goto(tctx, levels[i].status, ret,
+						done, "");
+	}
+
+	/* get the all_info file into to check against */
+	all_info2.generic.level = RAW_FILEINFO_SMB2_ALL_INFORMATION;
+	all_info2.generic.in.file.handle = h2;
+	status = smb2_getinfo_file(tree, tctx, &all_info2);
+	torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
+					"RAW_FILEINFO_ALL_INFO failed");
+
+	alt_info.generic.level = RAW_FILEINFO_ALT_NAME_INFORMATION;
+	alt_info.generic.in.file.handle = h2;
+	status = smb2_getinfo_file(tree, tctx, &alt_info);
+	torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
+					"RAW_FILEINFO_ALT_NAME_INFO failed");
+
+	internal_info.generic.level = RAW_FILEINFO_INTERNAL_INFORMATION;
+	internal_info.generic.in.file.handle = h2;
+	status = smb2_getinfo_file(tree, tctx, &internal_info);
+	torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
+					"RAW_FILEINFO_INTERNAL_INFORMATION "
+				        "failed");
+
+	CHECK_NAME("SMB2_FIND_BOTH_DIRECTORY_INFO",      both_directory_info,    name, fname, STR_TERMINATE_ASCII);
+
+	CHECK_WSTR("SMB2_FIND_BOTH_DIRECTORY_INFO",      both_directory_info,    short_name, alt_info, alt_name_info, fname, STR_UNICODE);
+
+done:
+	smb2_util_close(tree, h);
+	smb2_util_unlink(tree, fname);
+	talloc_free(mem_ctx);
+
+	return ret;
+}
 
 struct multiple_result {
 	TALLOC_CTX *tctx;
@@ -1453,6 +1520,7 @@ struct torture_suite *torture_smb2_dir_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "find", test_find);
 	torture_suite_add_1smb2_test(suite, "fixed", test_fixed);
 	torture_suite_add_1smb2_test(suite, "one", test_one_file);
+	torture_suite_add_1smb2_test(suite, "both", test_both_file);
 	torture_suite_add_1smb2_test(suite, "many", test_many_files);
 	torture_suite_add_1smb2_test(suite, "modify", test_modify_search);
 	torture_suite_add_1smb2_test(suite, "sorted", test_sorted);
