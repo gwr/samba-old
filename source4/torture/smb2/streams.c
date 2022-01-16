@@ -152,6 +152,38 @@ static bool check_stream(struct smb2_tree *tree,
 	return true;
 }
 
+
+/*
+ * Wish there was an obuf size param to ...
+ */
+NTSTATUS smb2_getinfo_file_size(struct smb2_tree *tree, TALLOC_CTX *mem_ctx,
+			   union smb_fileinfo *io, uint32_t osize)
+{
+
+	// struct smb2_request *req = smb2_getinfo_file_send(tree, io);
+	struct smb2_request *req = NULL;
+
+	struct smb2_getinfo b;
+	uint16_t smb2_level = smb2_getinfo_map_level(io->generic.level, SMB2_GETINFO_FILE);
+
+	if (smb2_level == 0) {
+		goto out;
+	}
+
+	ZERO_STRUCT(b);
+	b.in.info_type            = smb2_level & 0xFF;
+	b.in.info_class           = smb2_level >> 8;
+	b.in.output_buffer_length = osize;
+	b.in.input_buffer_length  = 0;
+	b.in.file.handle          = io->generic.in.file.handle;
+
+	req = smb2_getinfo_send(tree, &b);
+
+out:
+	return smb2_getinfo_file_recv(req, mem_ctx, io);
+}
+
+
 static bool check_stream_list(struct smb2_tree *tree,
 			      struct torture_context *tctx,
 			      const char *fname,
@@ -167,10 +199,17 @@ static bool check_stream_list(struct smb2_tree *tree,
 	struct stream_struct *stream_sort;
 	bool ret = false;
 
+	ZERO_STRUCT(finfo);
 	finfo.generic.level = RAW_FILEINFO_STREAM_INFORMATION;
 	finfo.generic.in.file.handle = h;
 
-	status = smb2_getinfo_file(tree, tctx, &finfo);
+	// Yes, this is a hack.  I just didn't want to change every caller.
+	if (num_exp == 3 && !strcmp(exp[1], ":Stream01:$DATA")) {
+		status = smb2_getinfo_file_size(tree, tctx, &finfo, 150);
+	} else {
+		status = smb2_getinfo_file(tree, tctx, &finfo);
+	}
+
 	if (!NT_STATUS_IS_OK(status)) {
 		torture_comment(tctx, "(%s) smb_raw_pathinfo failed: %s\n",
 		    __location__, nt_errstr(status));
@@ -1363,6 +1402,83 @@ done:
 	}} while (0)
 
 /*
+  test stream name outbuf 150
+*/
+static bool test_stream_names4(struct torture_context *tctx,
+			      struct smb2_tree *tree)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	NTSTATUS status;
+	union smb_open io;
+//	union smb_fileinfo finfo;
+	const char *fname = DNAME "\\stream_names.txt";
+	const char *sname1, *sname2;
+	bool ret = true;
+	struct smb2_handle h, h1, h2, h3;
+	const char *three[3] = {
+		"::$DATA",
+		":Stream01:$DATA",
+		":Stream02:$DATA"
+	};
+
+	ZERO_STRUCT(h);
+	ZERO_STRUCT(h1);
+	ZERO_STRUCT(h2);
+	ZERO_STRUCT(h3);
+
+	sname1 = talloc_asprintf(mem_ctx, "%s:%s", fname, "Stream01");
+	sname2 = talloc_asprintf(mem_ctx, "%s:%s", fname, "Stream02");
+
+	/* clean slate ...*/
+	smb2_util_unlink(tree, fname);
+	smb2_deltree(tree, fname);
+	smb2_deltree(tree, DNAME);
+
+	status = torture_smb2_testdir(tree, DNAME, &h);
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	torture_comment(tctx, "(%s) testing stream names\n", __location__);
+	ZERO_STRUCT(io.smb2);
+	io.smb2.in.create_flags = 0;
+	io.smb2.in.desired_access = SEC_FILE_WRITE_DATA;
+	io.smb2.in.create_options = 0;
+	io.smb2.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+	io.smb2.in.share_access = 0;
+	io.smb2.in.alloc_size = 0;
+	io.smb2.in.create_disposition = NTCREATEX_DISP_CREATE;
+	io.smb2.in.impersonation_level = SMB2_IMPERSONATION_ANONYMOUS;
+	io.smb2.in.security_flags = 0;
+	io.smb2.in.fname = sname1;
+
+	status = smb2_create(tree, mem_ctx, &(io.smb2));
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h1 = io.smb2.out.file.handle;
+
+	io.smb2.in.fname = sname2;
+	status = smb2_create(tree, mem_ctx, &(io.smb2));
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h2 = io.smb2.out.file.handle;
+
+	io.smb2.in.fname = fname;
+	io.smb2.in.create_disposition = NTCREATEX_DISP_OPEN;
+	status = smb2_create(tree, mem_ctx, &(io.smb2));
+	CHECK_STATUS(status, NT_STATUS_OK);
+
+	torture_assert(tctx,
+		       check_stream_list(tree, tctx, fname, 3, three,
+					 io.smb2.out.file.handle),
+		       "streams");
+
+done:
+	smb2_util_close(tree, h1);
+	status = smb2_util_unlink(tree, fname);
+	smb2_deltree(tree, DNAME);
+	talloc_free(mem_ctx);
+
+	return ret;
+}
+
+/*
   test stream renames
 */
 static bool test_stream_rename(struct torture_context *tctx,
@@ -2052,6 +2168,7 @@ struct torture_suite *torture_smb2_streams_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "names", test_stream_names);
 	torture_suite_add_1smb2_test(suite, "names2", test_stream_names2);
 	torture_suite_add_1smb2_test(suite, "names3", test_stream_names3);
+	torture_suite_add_1smb2_test(suite, "names4", test_stream_names4);
 	torture_suite_add_1smb2_test(suite, "rename", test_stream_rename);
 	torture_suite_add_1smb2_test(suite, "rename2", test_stream_rename2);
 	torture_suite_add_1smb2_test(suite, "create-disposition", test_stream_create_disposition);
