@@ -6691,7 +6691,7 @@ static bool test_ioctl_dup_extents_dest_lck(struct torture_context *tctx,
  */
 
 static NTSTATUS odx_read(struct smb2_tree *tree, struct smb2_handle *src_h,
-	uint64_t off, uint64_t *readlen, struct storage_offload_token *token)
+	uint64_t src_off, uint64_t *readlen, struct storage_offload_token *token)
 {
 	union smb_ioctl ioctl;
 	struct fsctl_offload_read_input  odx_read_in;
@@ -6709,7 +6709,7 @@ static NTSTATUS odx_read(struct smb2_tree *tree, struct smb2_handle *src_h,
 
 	ZERO_STRUCT(odx_read_in);
 	odx_read_in.size = 32;
-	odx_read_in.file_offset = off;
+	odx_read_in.file_offset = src_off;
 	odx_read_in.length = *readlen;
 	ZERO_STRUCT(odx_read_out);
 
@@ -6745,8 +6745,9 @@ done:
 	return status;
 }
 
-static NTSTATUS odx_write(struct smb2_tree *tree, struct smb2_handle *dest_h,
-	uint64_t off, uint64_t *writelen, struct storage_offload_token *token)
+static NTSTATUS odx_write(struct smb2_tree *tree,
+	struct smb2_handle *dest_h, uint64_t dest_off, uint64_t *writelen,
+	struct storage_offload_token *token, uint64_t token_off)
 {
 	union smb_ioctl ioctl;
 	struct fsctl_offload_write_input  odx_write_in;
@@ -6764,8 +6765,9 @@ static NTSTATUS odx_write(struct smb2_tree *tree, struct smb2_handle *dest_h,
 
 	ZERO_STRUCT(odx_write_in);
 	odx_write_in.size = 32 + 512;
-	odx_write_in.file_offset = off;
+	odx_write_in.file_offset = dest_off;
 	odx_write_in.copy_length = *writelen;
+	odx_write_in.xfer_offset = token_off;
 	memcpy(&odx_write_in.token, token,
 	       sizeof (struct storage_offload_token));
 
@@ -6798,6 +6800,49 @@ done:
 	TALLOC_FREE(tmp_ctx);
 	return status;
 }
+
+static NTSTATUS odx_copy(struct smb2_tree *tree,
+	struct smb2_handle *src_h, uint64_t src_off,
+	struct smb2_handle *dest_h, uint64_t dest_off,
+	uint64_t *copylen)
+{
+	NTSTATUS status = NT_STATUS_SUCCESS;
+	struct storage_offload_token token;
+	uint64_t rd_len, wr_len;
+	uint64_t wr_todo, xfer_off;
+
+	while (*copylen != 0) {
+		rd_len = *copylen;
+		status = odx_read(tree, src_h, src_off, &rd_len, &token);
+		if (!NT_STATUS_IS_OK(status))
+			break;
+
+		/*
+		 * The server may write less then we ask for with each
+		 * ODX write, so need to loop, advancing offsets.
+		 */
+		xfer_off = 0;
+		wr_todo = rd_len;
+		while (wr_todo != 0) {
+			wr_len = wr_todo;
+			status = odx_write(tree, dest_h, dest_off, &wr_len,
+					   &token, xfer_off);
+			if (!NT_STATUS_IS_OK(status))
+				goto done;
+
+			dest_off += wr_len;
+			xfer_off += wr_len;
+			wr_todo -= wr_len;
+		}
+
+		src_off  += rd_len;
+		*copylen -= rd_len;
+	}
+
+done:
+	return status;
+}
+
 
 /*
  * Test simple ODX copy of a file.
@@ -6844,7 +6889,7 @@ static bool test_ioctl_copy_odx_simple(struct torture_context *torture,
 	status = odx_read(tree, &src_h, 0, &size_xfer, &token);
 	torture_assert_ntstatus_ok(torture, status, "FSCTL_OFFLOAD_READ");
 
-	status = odx_write(tree, &dest_h, 0, &size_xfer, &token);
+	status = odx_write(tree, &dest_h, 0, &size_xfer, &token, 0);
 	torture_assert_ntstatus_ok(torture, status, "FSCTL_OFFLOAD_WRITE");
 
 	ok = check_pattern(torture, tree, tmp_ctx, dest_h, 0, size_real, 0);
@@ -6868,6 +6913,81 @@ static bool test_ioctl_copy_odx_simple(struct torture_context *torture,
 		smb2_util_close(tree, dest_h);
 	smb2_util_unlink(tree, FNAME);
 	smb2_util_unlink(tree, FNAME2);
+
+	return ok;
+}
+
+/*
+ * Test ODX copy of a _sparse_ file.
+ * Here too, letting ODX copy extend the destination file.
+ */
+static bool test_ioctl_copy_odx_sparse(struct torture_context *torture,
+					 struct smb2_tree *tree)
+{
+	struct smb2_handle src_h;
+	struct smb2_handle dest_h;
+	NTSTATUS status;
+	union smb_fileinfo q;
+	union smb_setfileinfo sinfo;
+	TALLOC_CTX *tmp_ctx = talloc_new(tree);
+	uint64_t size_aligned = 0x10002000;
+	uint64_t size_real    = size_aligned - 256;
+	uint64_t size_xfer;
+	bool ok;
+
+	/*
+	 * Create source file.  Note:
+	 * size is _intentionally_ not block aligned.
+	 */
+	ok = test_setup_create_fill(torture, tree,
+				    tmp_ctx, FNAME,
+				    &src_h, 0,
+				    SEC_RIGHTS_FILE_ALL,
+				    FILE_ATTRIBUTE_NORMAL);
+	torture_assert(torture, ok, "src file create fill");
+
+	/*
+	 * Set source file size.
+	 */
+	ZERO_STRUCT(sinfo);
+	sinfo.end_of_file_info.level =
+		RAW_SFILEINFO_END_OF_FILE_INFORMATION;
+	sinfo.end_of_file_info.in.file.handle = src_h;
+	sinfo.end_of_file_info.in.size = size_real;
+	status = smb2_setinfo_file(tree, &sinfo);
+	torture_assert_ntstatus_ok(tmp_ctx, status, "smb2_setinfo_file");
+
+	/*
+	 * Create dest file
+	 */
+	ok = test_setup_create_fill(torture, tree,
+				    tmp_ctx, FNAME2,
+				    &dest_h, 0,
+				    SEC_RIGHTS_FILE_ALL,
+				    FILE_ATTRIBUTE_NORMAL);
+	torture_assert(torture, ok, "dest file create fill");
+
+	size_xfer = size_aligned;
+
+	status = odx_copy(tree, &src_h, 0, &dest_h, 0, &size_xfer);
+	torture_assert_ntstatus_ok(torture, status, "odx_copy");
+
+	ZERO_STRUCT(q);
+	q.all_info2.level = RAW_FILEINFO_SMB2_ALL_INFORMATION;
+	q.all_info2.in.file.handle = dest_h;
+	status = smb2_getinfo_file(tree, torture, &q);
+	torture_assert_ntstatus_ok(torture, status, "getinfo");
+
+	torture_assert_int_equal(torture, q.all_info2.out.size, size_real,
+				 "size after odx copy");
+
+	TALLOC_FREE(tmp_ctx);
+	if (!smb2_util_handle_empty(src_h))
+		smb2_util_close(tree, src_h);
+	if (!smb2_util_handle_empty(dest_h))
+		smb2_util_close(tree, dest_h);
+//	smb2_util_unlink(tree, FNAME);
+//	smb2_util_unlink(tree, FNAME2);
 
 	return ok;
 }
@@ -7021,6 +7141,8 @@ struct torture_suite *torture_smb2_ioctl_init(TALLOC_CTX *ctx)
 
 	torture_suite_add_1smb2_test(suite, "copy_odx_simple",
 				     test_ioctl_copy_odx_simple);
+	torture_suite_add_1smb2_test(suite, "copy_odx_sparse",
+				     test_ioctl_copy_odx_sparse);
 
 	suite->description = talloc_strdup(suite, "SMB2-IOCTL tests");
 
