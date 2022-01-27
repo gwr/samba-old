@@ -6687,6 +6687,119 @@ static bool test_ioctl_dup_extents_dest_lck(struct torture_context *tctx,
 }
 
 /*
+ * Offload read/write (ODX) helpers
+ */
+
+static NTSTATUS odx_read(struct smb2_tree *tree, struct smb2_handle *src_h,
+	uint64_t off, uint64_t *readlen, struct storage_offload_token *token)
+{
+	union smb_ioctl ioctl;
+	struct fsctl_offload_read_input  odx_read_in;
+	struct fsctl_offload_read_output odx_read_out;
+	NTSTATUS status;
+	enum ndr_err_code ndr_ret;
+	TALLOC_CTX *tmp_ctx = talloc_new(tree);
+
+	ZERO_STRUCT(ioctl);
+	ioctl.smb2.level = RAW_IOCTL_SMB2;
+	ioctl.smb2.in.file.handle = *src_h;
+	ioctl.smb2.in.function = FSCTL_OFFLOAD_READ;
+	ioctl.smb2.in.max_response_size = 1024;
+	ioctl.smb2.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL;
+
+	ZERO_STRUCT(odx_read_in);
+	odx_read_in.size = 32;
+	odx_read_in.file_offset = off;
+	odx_read_in.length = *readlen;
+	ZERO_STRUCT(odx_read_out);
+
+	ndr_ret = ndr_push_struct_blob(&ioctl.smb2.in.out, tmp_ctx, &odx_read_in,
+		(ndr_push_flags_fn_t)ndr_push_fsctl_offload_read_input);
+	if (ndr_ret != NDR_ERR_SUCCESS) {
+		status = ndr_map_error2ntstatus(ndr_ret);
+		goto done;
+	}
+
+	status = smb2_ioctl(tree, tmp_ctx, &ioctl.smb2);
+	if (!NT_STATUS_IS_OK(status))
+		goto done;
+
+	ndr_ret = ndr_pull_struct_blob(&ioctl.smb2.out.out, tmp_ctx, &odx_read_out,
+			(ndr_pull_flags_fn_t)ndr_pull_fsctl_offload_read_output);
+	if (ndr_ret != NDR_ERR_SUCCESS) {
+		status = ndr_map_error2ntstatus(ndr_ret);
+		goto done;
+	}
+
+	/* check odx_read_out.size? */
+
+	/* odx_read_out.flags not used */
+	*readlen = odx_read_out.xfer_length;
+	if (token != NULL) {
+		memcpy(token, &odx_read_out.token,
+		       sizeof(struct storage_offload_token));
+	}
+
+done:
+	TALLOC_FREE(tmp_ctx);
+	return status;
+}
+
+static NTSTATUS odx_write(struct smb2_tree *tree, struct smb2_handle *dest_h,
+	uint64_t off, uint64_t *writelen, struct storage_offload_token *token)
+{
+	union smb_ioctl ioctl;
+	struct fsctl_offload_write_input  odx_write_in;
+	struct fsctl_offload_write_output odx_write_out;
+	NTSTATUS status;
+	enum ndr_err_code ndr_ret;
+	TALLOC_CTX *tmp_ctx = talloc_new(tree);
+
+	ZERO_STRUCT(ioctl);
+	ioctl.smb2.level = RAW_IOCTL_SMB2;
+	ioctl.smb2.in.file.handle = *dest_h;
+	ioctl.smb2.in.function = FSCTL_OFFLOAD_WRITE;
+	ioctl.smb2.in.max_response_size = 1024;
+	ioctl.smb2.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL;
+
+	ZERO_STRUCT(odx_write_in);
+	odx_write_in.size = 32 + 512;
+	odx_write_in.file_offset = off;
+	odx_write_in.copy_length = *writelen;
+	memcpy(&odx_write_in.token, token,
+	       sizeof (struct storage_offload_token));
+
+	ZERO_STRUCT(odx_write_out);
+
+	ndr_ret = ndr_push_struct_blob(&ioctl.smb2.in.out, tmp_ctx, &odx_write_in,
+		(ndr_push_flags_fn_t)ndr_push_fsctl_offload_write_input);
+	if (ndr_ret != NDR_ERR_SUCCESS) {
+		status = ndr_map_error2ntstatus(ndr_ret);
+		goto done;
+	}
+
+	status = smb2_ioctl(tree, tmp_ctx, &ioctl.smb2);
+	if (!NT_STATUS_IS_OK(status))
+		goto done;
+
+	ndr_ret = ndr_pull_struct_blob(&ioctl.smb2.out.out, tmp_ctx, &odx_write_out,
+			(ndr_pull_flags_fn_t)ndr_pull_fsctl_offload_write_output);
+	if (ndr_ret != NDR_ERR_SUCCESS) {
+		status = ndr_map_error2ntstatus(ndr_ret);
+		goto done;
+	}
+
+	/* check odx_write_out.size? */
+
+	/* odx_write_out.flags not used */
+	*writelen = odx_write_out.length_written;
+
+done:
+	TALLOC_FREE(tmp_ctx);
+	return status;
+}
+
+/*
  * Test simple ODX copy of a file.
  * Length not block aligned.
  */
@@ -6696,19 +6809,12 @@ static bool test_ioctl_copy_odx_simple(struct torture_context *torture,
 	struct smb2_handle src_h;
 	struct smb2_handle dest_h;
 	NTSTATUS status;
-	union smb_ioctl ioctl;
 	union smb_fileinfo q;
 	TALLOC_CTX *tmp_ctx = talloc_new(tree);
+	struct storage_offload_token token;
 	uint64_t size_aligned = 0x14000;
 	uint64_t size_real    = size_aligned - 256;
-
-	struct fsctl_offload_read_input  odx_read_in;
-	struct fsctl_offload_read_output odx_read_out;
-
-	struct fsctl_offload_write_input  odx_write_in;
-	struct fsctl_offload_write_output odx_write_out;
-
-	enum ndr_err_code ndr_ret;
+	uint64_t size_xfer;
 	bool ok;
 
 	/*
@@ -6732,60 +6838,14 @@ static bool test_ioctl_copy_odx_simple(struct torture_context *torture,
 				    FILE_ATTRIBUTE_NORMAL);
 	torture_assert(torture, ok, "dest file create fill");
 
-	ZERO_STRUCT(ioctl);
-	ioctl.smb2.level = RAW_IOCTL_SMB2;
-	ioctl.smb2.in.file.handle = src_h;
-	ioctl.smb2.in.function = FSCTL_OFFLOAD_READ;
-	/* Allow for Key + ContextLength + Context */
-	ioctl.smb2.in.max_response_size = 1024;
-	ioctl.smb2.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL;
+	ZERO_STRUCT(token);
+	size_xfer = size_aligned;
 
-	ZERO_STRUCT(odx_read_in);
-	odx_read_in.size = 32;
-	odx_read_in.length = size_aligned;
-	ZERO_STRUCT(odx_read_out);
-	odx_read_out.size = 16 + 512;
-
-	ndr_ret = ndr_push_struct_blob(&ioctl.smb2.in.out, tmp_ctx, &odx_read_in,
-		(ndr_push_flags_fn_t)ndr_push_fsctl_offload_read_input);
-	torture_assert_ndr_success(torture, ndr_ret, "ndr_push odx_read_in");
-
-	status = smb2_ioctl(tree, tmp_ctx, &ioctl.smb2);
+	status = odx_read(tree, &src_h, 0, &size_xfer, &token);
 	torture_assert_ntstatus_ok(torture, status, "FSCTL_OFFLOAD_READ");
 
-	ndr_ret = ndr_pull_struct_blob(&ioctl.smb2.out.out, tmp_ctx, &odx_read_out,
-			(ndr_pull_flags_fn_t)ndr_pull_fsctl_offload_read_output);
-	torture_assert_ndr_success(torture, ndr_ret, "ndr_pull odx_read_out");
-
-	torture_assert(torture, (odx_read_out.xfer_length == size_aligned),
-		       "odx_read xfer_length");
-
-
-	ZERO_STRUCT(ioctl);
-	ioctl.smb2.level = RAW_IOCTL_SMB2;
-	ioctl.smb2.in.file.handle = dest_h;
-	ioctl.smb2.in.function = FSCTL_OFFLOAD_WRITE;
-	/* Allow for Key + ContextLength + Context */
-	ioctl.smb2.in.max_response_size = 1024;
-	ioctl.smb2.in.flags = SMB2_IOCTL_FLAG_IS_FSCTL;
-
-	ZERO_STRUCT(odx_write_in);
-	odx_write_in.size = 32 + 512;
-	odx_write_in.copy_length = size_aligned;
-	odx_write_in.token = odx_read_out.token;
-	ZERO_STRUCT(odx_write_out);
-	odx_write_out.size = 32;
-
-	ndr_ret = ndr_push_struct_blob(&ioctl.smb2.in.out, tmp_ctx, &odx_write_in,
-		(ndr_push_flags_fn_t)ndr_push_fsctl_offload_write_input);
-	torture_assert_ndr_success(torture, ndr_ret, "ndr_push odx_write_in");
-
-	status = smb2_ioctl(tree, tmp_ctx, &ioctl.smb2);
+	status = odx_write(tree, &dest_h, 0, &size_xfer, &token);
 	torture_assert_ntstatus_ok(torture, status, "FSCTL_OFFLOAD_WRITE");
-
-	ndr_ret = ndr_pull_struct_blob(&ioctl.smb2.out.out, tmp_ctx, &odx_write_out,
-			(ndr_pull_flags_fn_t)ndr_pull_fsctl_offload_write_output);
-	torture_assert_ndr_success(torture, ndr_ret, "ndr_pull odx_write_out");
 
 	ok = check_pattern(torture, tree, tmp_ctx, dest_h, 0, size_real, 0);
 	if (!ok) {
