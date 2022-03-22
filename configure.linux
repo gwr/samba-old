@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# Configure with options to build on recent Ubuntu linux
+# mostly for the purpose of running smbtorture etc.
+#
+# Note package prerequisites:
+# apt install build-essential ...
+# gcc make python3-distutils python3-dev python-config
+# libjansson-dev libarchive-dev libldap2-dev
+
+Waf=./buildtools/bin/waf
+export JOBS=1
+
+# Need this when the system has a newer version of some libraries,
+# eg. /lib/x86_64-linux-gnu/libndr.so.1 vs samba libndr.so.0
+export LDFLAGS='-Wl,-rpath,/usr/local/samba/lib'
+
+export PYTHON=/usr/bin/python3
+
+$WAF ./configure -C \
+	--prefix=/usr/local/samba \
+	--enable-developer \
+	--disable-avahi \
+	--disable-rpath \
+	--nopyo --nopycache \
+	--python=$PYTHON \
+	--without-ad-dc \
+	--without-pam \
+	--without-acl-support \
+	--abi-check-disable \
+	--bundled-libraries=ALL \
+	"$@"
+
+echo "Run: make clean install smbtorture"

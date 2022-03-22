@@ -178,11 +178,10 @@
 #include <sys/types.h>
 #endif
 
-#if 0 // def HAVE_SYS_SYSMACROS_H
-#include <sys/sysmacros.h>
-#else
-// Should use HAVE_SYS_MKDEV_H
+#ifdef HAVE_SYS_MKDEV_H
 #include <sys/mkdev.h>
+#elif defined(HAVE_SYS_SYSMACROS_H)
+#include <sys/sysmacros.h>
 #endif
 
 #ifdef HAVE_SETPROCTITLE_H

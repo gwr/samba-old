@@ -2274,12 +2274,10 @@ static long int uwrap_syscall (long int sysno, va_list vp)
 #ifdef HAVE_SYSCALL
 #ifdef HAVE_SYSCALL_INT
 int syscall (int sysno, ...)
-#else
-#if 1 // HAVE_LONG_SYSCALL_INT ?
+#elif defined(HAVE_LONG_SYSCALL_INT)
 long int syscall(int sysno, ...)
 #else
 long int syscall (long int sysno, ...)
-#endif
 #endif
 {
 #ifdef HAVE_SYSCALL_INT
