@@ -594,6 +594,102 @@ done:
 	return ret;
 }
 
+
+/*
+ * Sequences of two opens, both specifying access and sharemode
+ */
+struct sharemode_info2 {
+	const char *share1;
+	uint32_t access1;
+	const char *share2;
+	uint32_t access2;
+	bool expect_ok;
+} sharemode_table2[] = {
+	{ "RD",	SEC_FILE_READ_DATA,
+	  "R",  SEC_FILE_READ_DATA,	true, },
+	{ "RD",	0x120089,
+	  "R",  0x120089,	true, },
+};
+
+/*
+ * Test a specific sequence of two opens
+ */
+static bool test_smb2_sharemode_open2(struct torture_context *tctx,
+				       struct smb2_tree *tree)
+{
+	const char *fname = "test_sharemode";
+	NTSTATUS status;
+	bool ret = true;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(sharemode_table2); i++) {
+		struct sharemode_info2 *info = &sharemode_table2[i];
+		struct smb2_create create1 = { }, create2 = { };
+		NTSTATUS expected_status;
+
+		torture_comment(tctx, "index %3d, "
+				"sharemode %3s, access 0x%06x vs "
+				"sharemode %3s, access 0x%06x\n",
+				i, info->share1, info->access1,
+				info->share2, info->access2);
+
+		create1.in.desired_access = info->access1;
+		create1.in.alloc_size = 0;
+		create1.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+		create1.in.share_access =
+			smb2_util_share_access(info->share1);
+		create1.in.create_disposition = NTCREATEX_DISP_OPEN_IF;
+		create1.in.create_options = 0;
+		create1.in.impersonation_level = SMB2_IMPERSONATION_ANONYMOUS;
+		create1.in.fname = fname;
+		create1.in.security_flags = 0;
+		create1.in.create_flags = NTCREATEX_FLAGS_EXTENDED;
+		create1.in.oplock_level = SMB2_OPLOCK_LEVEL_NONE;
+
+		status = smb2_create(tree, tctx, &create1);
+
+		torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
+						"CREATE file failed\n");
+
+		create2.in.desired_access = info->access2;
+		create2.in.alloc_size = 0;
+		create2.in.file_attributes = FILE_ATTRIBUTE_NORMAL;
+		create2.in.share_access =
+			smb2_util_share_access(info->share2);
+		create2.in.create_disposition = NTCREATEX_DISP_OPEN;
+		create2.in.create_options = 0;
+		create2.in.impersonation_level = SMB2_IMPERSONATION_ANONYMOUS;
+		create2.in.fname = fname;
+		create2.in.security_flags = 0;
+		create2.in.create_flags = NTCREATEX_FLAGS_EXTENDED;
+		create2.in.oplock_level = SMB2_OPLOCK_LEVEL_NONE;
+
+		status = smb2_create(tree, tctx, &create2);
+		expected_status = info->expect_ok ?
+			NT_STATUS_OK : NT_STATUS_SHARING_VIOLATION;
+		torture_assert_ntstatus_equal_goto(tctx, status,
+						   expected_status, ret,
+						   done, "Unexpected status on "
+						   "second create.\n");
+
+		status = smb2_util_close(tree, create1.out.file.handle);
+		torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
+						"Failed to close "
+						"first handle.\n");
+
+		if (info->expect_ok) {
+			status = smb2_util_close(tree, create2.out.file.handle);
+			torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
+							"Failed to close  "
+							"second handle.\n");
+		}
+	}
+
+done:
+	smb2_util_unlink(tree, fname);
+	return ret;
+}
+
 struct torture_suite *torture_smb2_sharemode_init(TALLOC_CTX *ctx)
 {
 	struct torture_suite *suite = torture_suite_create(ctx, "sharemode");
@@ -602,6 +698,8 @@ struct torture_suite *torture_smb2_sharemode_init(TALLOC_CTX *ctx)
 				     test_smb2_sharemode_access);
 	torture_suite_add_1smb2_test(suite, "access-sharemode",
 				     test_smb2_access_sharemode);
+	torture_suite_add_1smb2_test(suite, "open2",
+				     test_smb2_sharemode_open2);
 
 	suite->description = talloc_strdup(suite, "SMB2-SHAREMODE tests");
 
