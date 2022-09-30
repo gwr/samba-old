@@ -2374,6 +2374,128 @@ static bool test_durable_open_open2_lease(struct torture_context *tctx,
 	return ret;
 }
 
+/*
+ * Variant of open2-lease to intentionally race with the
+ * close of the first handle that happens on the server
+ * when the second handle causes a "break_H"
+ */
+static bool test_durable_open_open2_lease2(struct torture_context *tctx,
+					  struct smb2_tree *tree1,
+					  struct smb2_tree *tree2)
+{
+	TALLOC_CTX *mem_ctx = talloc_new(tctx);
+	struct smb2_create io1, io2, io3;
+	struct smb2_lease ls;
+	struct smb2_handle h1 = {{0}};
+	struct smb2_handle h2 = {{0}};
+	struct smb2_handle h3 = {{0}};
+	struct smb2_request *req2 = NULL;
+	NTSTATUS status;
+	char fname[256];
+	bool ret = true;
+	uint64_t lease;
+	uint32_t caps;
+	struct smbcli_options options;
+
+	options = tree1->session->transport->options;
+
+	caps = smb2cli_conn_server_capabilities(tree1->session->transport->conn);
+	if (!(caps & SMB2_CAP_LEASING)) {
+		torture_skip(tctx, "leases are not supported");
+	}
+
+	/*
+	 * Choose a random name and random lease in case the state is left a
+	 * little funky.
+	 */
+	lease = random();
+	snprintf(fname, 256, "durable_open_open2_lease_%s.dat",
+		 generate_random_str(tctx, 8));
+
+	/* Clean slate */
+	smb2_util_unlink(tree1, fname);
+
+	/* Create with lease */
+	smb2_lease_create_share(&io1, &ls, false /* dir */, fname,
+				smb2_util_share_access(""),
+				lease,
+				smb2_util_lease_state("RH"));
+	io1.in.durable_open = true;
+
+	status = smb2_create(tree1, mem_ctx, &io1);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h1 = io1.out.file.handle;
+	CHECK_VAL(io1.out.durable_open, true);
+	CHECK_CREATED(&io1, CREATED, FILE_ATTRIBUTE_ARCHIVE);
+
+	CHECK_VAL(io1.out.oplock_level, SMB2_OPLOCK_LEVEL_LEASE);
+	CHECK_VAL(io1.out.lease_response.lease_key.data[0], lease);
+	CHECK_VAL(io1.out.lease_response.lease_key.data[1], ~lease);
+	CHECK_VAL(io1.out.lease_response.lease_state,
+		  smb2_util_lease_state("RH"));
+
+	/* Disconnect */
+	talloc_free(tree1);
+	tree1 = NULL;
+
+	/*
+	 * Open the file in tree2
+	 * Causes close of disconnected durable handle from tree1
+	 */
+	smb2_oplock_create(&io2, fname, SMB2_OPLOCK_LEVEL_NONE);
+	req2 = smb2_create_send(tree2, &io2);
+	torture_assert(tctx, req2 != NULL, "smb2_create_send");
+
+	smb_msleep(10);
+
+	/*
+	 * Another open on tree2 racing with the previous open.
+	 * This races with the close of the durable handle on
+	 * the (disconnected) tree1.
+	 */
+	smb2_oplock_create(&io3, fname, SMB2_OPLOCK_LEVEL_NONE);
+	io3.in.desired_access = SEC_FILE_READ_ATTRIBUTE;
+	status = smb2_create(tree2, mem_ctx, &io3);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h3 = io3.out.file.handle;
+	CHECK_CREATED(&io3, EXISTED, FILE_ATTRIBUTE_ARCHIVE);
+
+	status = smb2_create_recv(req2, tctx, &io2);
+	CHECK_STATUS(status, NT_STATUS_OK);
+	h2 = io2.out.file.handle;
+//	CHECK_CREATED(&io2, EXISTED, FILE_ATTRIBUTE_ARCHIVE);
+
+	/* Reconnect */
+	if (!torture_smb2_connection_ext(tctx, 0, &options, &tree1)) {
+		torture_warning(tctx, "couldn't reconnect, bailing\n");
+		ret = false;
+		goto done;
+	}
+
+	ZERO_STRUCT(io1);
+	io1.in.fname = fname;
+	io1.in.durable_handle = &h1;
+	io1.in.lease_request = &ls;
+
+	status = smb2_create(tree1, mem_ctx, &io1);
+	CHECK_STATUS(status, NT_STATUS_OBJECT_NAME_NOT_FOUND);
+	h1 = io1.out.file.handle;
+
+ done:
+	if (tree1 != NULL){
+		smb2_util_close(tree1, h1);
+		smb2_util_unlink(tree1, fname);
+		talloc_free(tree1);
+	}
+
+	smb2_util_close(tree2, h3);
+	smb2_util_close(tree2, h2);
+	smb2_util_unlink(tree2, fname);
+	talloc_free(tree2);
+
+	return ret;
+}
+
 /**
  * Open with a batch oplock, disconnect, open in another tree, reconnect.
  *
@@ -2781,6 +2903,8 @@ struct torture_suite *torture_smb2_durable_open_init(TALLOC_CTX *ctx)
 	torture_suite_add_1smb2_test(suite, "lock-lease", test_durable_open_lock_lease);
 	torture_suite_add_2smb2_test(suite, "open2-lease",
 				     test_durable_open_open2_lease);
+	torture_suite_add_2smb2_test(suite, "open2-lease2",
+				     test_durable_open_open2_lease2);
 	torture_suite_add_2smb2_test(suite, "open2-oplock",
 				     test_durable_open_open2_oplock);
 	torture_suite_add_1smb2_test(suite, "alloc-size",
