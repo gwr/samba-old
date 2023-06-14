@@ -27,6 +27,7 @@ $WAF ./configure -C \
 	--without-ad-dc \
 	--without-pam \
 	--without-acl-support \
+	--without-json \
 	--abi-check-disable \
 	--bundled-libraries=ALL \
 	"$@"

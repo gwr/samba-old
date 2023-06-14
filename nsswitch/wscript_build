@@ -11,11 +11,11 @@ bld.SAMBA_LIBRARY('winbind-client',
 	)
 
 
-bld.SAMBA_BINARY('nsstest',
-		 source='nsstest.c',
-		 deps='replace dl',
-                 install=False
-		 )
+#bld.SAMBA_BINARY('nsstest',
+#		 source='nsstest.c',
+#		 deps='replace dl',
+#		 install=False
+#		 )
 
 if bld.CONFIG_SET('HAVE_PTHREAD'):
     bld.SAMBA_BINARY('stress-nss-libwbclient',
